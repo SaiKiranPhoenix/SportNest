@@ -74,7 +74,7 @@ function AnimatedRoutes() {
 function App() {
   return (
     <Router>
-      <div className="app-container">
+      <div className="min-h-screen bg-gray-50">
         <ToastContainer position="top-right" autoClose={3000} />
         <AnimatedRoutes />
       </div>
