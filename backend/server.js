@@ -1,0 +1,260 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+// MongoDB Connection
+mongoose.connect('mongodb://localhost:27017/sportnest', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+});
+
+// Schema Definitions
+const userSchema = new mongoose.Schema({
+    name: String,
+    email: { type: String, unique: true },
+    password: String,
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    phone: String,
+    bookings: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Booking' }]
+});
+
+const turfSchema = new mongoose.Schema({
+    name: String,
+    location: String,
+    price: Number,
+    description: String,
+    images: [String],
+    availability: [{
+        date: Date,
+        slots: [{
+            time: String,
+            isBooked: { type: Boolean, default: false }
+        }]
+    }],
+    reviews: [{
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        rating: Number,
+        comment: String,
+        date: { type: Date, default: Date.now }
+    }]
+});
+
+const bookingSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    turfId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turf' },
+    date: Date,
+    slot: String,
+    status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed' },
+    bookingDate: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+const Turf = mongoose.model('Turf', turfSchema);
+const Booking = mongoose.model('Booking', bookingSchema);
+
+// Middleware
+const authenticateToken = (req, res, next) => {
+    const token = req.header('Authorization');
+    if (!token) return res.status(401).json({ message: 'Access denied' });
+
+    jwt.verify(token, 'your_jwt_secret', (err, user) => {
+        if (err) return res.status(403).json({ message: 'Invalid token' });
+        req.user = user;
+        next();
+    });
+};
+
+const isAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    next();
+};
+
+// Auth Routes
+app.post('/register', async (req, res) => {
+    try {
+        const { name, email, password, role, phone } = req.body;
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const user = new User({
+            name,
+            email,
+            password: hashedPassword,
+            role,
+            phone
+        });
+        await user.save();
+        res.status(201).json({ message: 'User registered successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.post('/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: 'User not found' });
+        }
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) {
+            return res.status(400).json({ message: 'Invalid password' });
+        }
+        const token = jwt.sign(
+            { id: user._id, role: user.role },
+            'your_jwt_secret',
+            { expiresIn: '24h' }
+        );
+        res.json({ token, role: user.role });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Admin Routes
+app.post('/turfs', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const turf = new Turf(req.body);
+        await turf.save();
+        res.status(201).json(turf);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.put('/turfs/:id', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const turf = await Turf.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.json(turf);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.delete('/turfs/:id', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        await Turf.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Turf deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.get('/users', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const users = await User.find({}).select('-password');
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// User Routes
+app.get('/turfs', authenticateToken, async (req, res) => {
+    try {
+        const turfs = await Turf.find({});
+        res.json(turfs);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.post('/bookings', authenticateToken, async (req, res) => {
+    try {
+        const booking = new Booking({
+            userId: req.user.id,
+            ...req.body
+        });
+        await booking.save();
+        
+        // Update user's bookings array
+        await User.findByIdAndUpdate(
+            req.user.id,
+            { $push: { bookings: booking._id } }
+        );
+        
+        res.status(201).json(booking);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.put('/bookings/:id/cancel', authenticateToken, async (req, res) => {
+    try {
+        const booking = await Booking.findByIdAndUpdate(
+            req.params.id,
+            { status: 'cancelled' },
+            { new: true }
+        );
+        res.json(booking);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.get('/bookings/history', authenticateToken, async (req, res) => {
+    try {
+        const bookings = await Booking.find({ userId: req.user.id })
+            .populate('turfId')
+            .sort({ bookingDate: -1 });
+        res.json(bookings);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.post('/turfs/:id/reviews', authenticateToken, async (req, res) => {
+    try {
+        const { rating, comment } = req.body;
+        const turf = await Turf.findByIdAndUpdate(
+            req.params.id,
+            {
+                $push: {
+                    reviews: {
+                        userId: req.user.id,
+                        rating,
+                        comment
+                    }
+                }
+            },
+            { new: true }
+        );
+        res.json(turf);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.get('/profile', authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select('-password');
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.put('/profile', authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findByIdAndUpdate(
+            req.user.id,
+            { $set: req.body },
+            { new: true }
+        ).select('-password');
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
