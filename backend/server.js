@@ -3,10 +3,46 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+// Configure multer for handling file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, 'uploads/');
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
+});
+
+const upload = multer({ 
+    storage: storage,
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Only JPEG, PNG and GIF are allowed.'));
+        }
+    },
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    }
+});
+
+// Serve uploaded files statically
+app.use('/uploads', express.static('uploads'));
+
+// Create uploads directory if it doesn't exist
+const fs = require('fs');
+if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads');
+}
 
 // MongoDB Connection
 mongoose.connect('mongodb://localhost:27017/sportnest', {
@@ -26,10 +62,22 @@ const userSchema = new mongoose.Schema({
 
 const turfSchema = new mongoose.Schema({
     name: String,
-    location: String,
+    location: {
+        type: String,
+        enum: ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Kolkata', 'Ahmedabad', 'Pune', 'Jaipur', 'Lucknow'],
+        required: true
+    },
+    sport: {
+        type: String,
+        enum: ['Cricket', 'Football', 'Badminton', 'Volleyball', 'Basketball', 'Tennis'],
+        required: true
+    },
     price: Number,
     description: String,
-    images: [String],
+    images: [{ 
+        filename: String,
+        path: String 
+    }],
     availability: [{
         date: Date,
         slots: [{
@@ -60,9 +108,11 @@ const Booking = mongoose.model('Booking', bookingSchema);
 
 // Middleware
 const authenticateToken = (req, res, next) => {
-    const token = req.header('Authorization');
-    if (!token) return res.status(401).json({ message: 'Access denied' });
+    const authHeader = req.header('Authorization');
+    if (!authHeader) return res.status(401).json({ message: 'Access denied' });
 
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+    
     jwt.verify(token, 'your_jwt_secret', (err, user) => {
         if (err) return res.status(403).json({ message: 'Invalid token' });
         req.user = user;
@@ -119,27 +169,92 @@ app.post('/login', async (req, res) => {
 });
 
 // Admin Routes
-app.post('/turfs', authenticateToken, isAdmin, async (req, res) => {
+app.post('/turfs', authenticateToken, isAdmin, upload.array('images', 5), async (req, res) => {
     try {
-        const turf = new Turf(req.body);
+        const { name, location, sport, price, description, availability } = req.body;
+        
+        const turfData = {
+            name,
+            location,
+            sport,
+            price: Number(price),
+            description,
+            availability: JSON.parse(availability),
+            images: req.files.map(file => ({
+                filename: file.filename,
+                path: `/uploads/${file.filename}`
+            }))
+        };
+        
+        const turf = new Turf(turfData);
         await turf.save();
         res.status(201).json(turf);
     } catch (error) {
+        // Delete uploaded files if turf creation fails
+        if (req.files) {
+            req.files.forEach(file => {
+                fs.unlinkSync(file.path);
+            });
+        }
         res.status(500).json({ message: error.message });
     }
 });
 
-app.put('/turfs/:id', authenticateToken, isAdmin, async (req, res) => {
+app.put('/turfs/:id', authenticateToken, isAdmin, upload.array('images', 5), async (req, res) => {
     try {
-        const turf = await Turf.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const turf = await Turf.findById(req.params.id);
+        if (!turf) {
+            return res.status(404).json({ message: 'Turf not found' });
+        }
+
+        // Delete old images if new ones are uploaded
+        if (req.files && req.files.length > 0) {
+            // Delete old image files
+            turf.images.forEach(image => {
+                const filePath = path.join(__dirname, image.path);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            });
+
+            // Update with new images
+            turf.images = req.files.map(file => ({
+                filename: file.filename,
+                path: `/uploads/${file.filename}`
+            }));
+        }
+
+        // Update other fields
+        Object.assign(turf, req.body);
+        await turf.save();
+        
         res.json(turf);
     } catch (error) {
+        // Delete newly uploaded files if update fails
+        if (req.files) {
+            req.files.forEach(file => {
+                fs.unlinkSync(file.path);
+            });
+        }
         res.status(500).json({ message: error.message });
     }
 });
 
 app.delete('/turfs/:id', authenticateToken, isAdmin, async (req, res) => {
     try {
+        const turf = await Turf.findById(req.params.id);
+        if (!turf) {
+            return res.status(404).json({ message: 'Turf not found' });
+        }
+
+        // Delete image files
+        turf.images.forEach(image => {
+            const filePath = path.join(__dirname, image.path);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        });
+
         await Turf.findByIdAndDelete(req.params.id);
         res.json({ message: 'Turf deleted successfully' });
     } catch (error) {

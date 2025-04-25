@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 'md' }) => {
@@ -135,28 +136,55 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
         {/* Menu */}
         <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
           {menuItems.map((item, idx) => (
-            <motion.button
-              key={idx}
-              initial={false}
-              whileHover={{ x: 4, backgroundColor: "#f3f4f6" }}
-              whileTap={{ scale: 0.98 }}
-              className="flex items-center w-full px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-all duration-200"
-              onClick={() => {
-                item.onClick?.();
-                if (window.innerWidth < 768) setOpen(false);
-              }}
-              {...(item.to ? { as: 'a', href: item.to } : {})}
-            >
-              {item.icon && (
-                <motion.span 
-                  className="mr-3 text-gray-600"
-                  whileHover={{ scale: 1.1, rotate: 5 }}
+            item.onClick ? (
+              <motion.button
+                key={idx}
+                initial={false}
+                whileHover={{ x: 4, backgroundColor: "#f3f4f6" }}
+                whileTap={{ scale: 0.98 }}
+                className="flex items-center w-full px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-all duration-200"
+                onClick={() => {
+                  item.onClick();
+                  if (window.innerWidth < 768) setOpen(false);
+                }}
+              >
+                {item.icon && (
+                  <motion.span 
+                    className="mr-3 text-gray-600"
+                    whileHover={{ scale: 1.1, rotate: 5 }}
+                  >
+                    {item.icon}
+                  </motion.span>
+                )}
+                <span className="text-gray-700 font-medium">{item.label}</span>
+              </motion.button>
+            ) : (
+              <Link
+                key={idx}
+                to={item.to}
+                className="flex items-center w-full px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-all duration-200"
+                onClick={() => {
+                  if (window.innerWidth < 768) setOpen(false);
+                }}
+              >
+                <motion.div
+                  initial={false}
+                  whileHover={{ x: 4 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex items-center w-full"
                 >
-                  {item.icon}
-                </motion.span>
-              )}
-              <span className="text-gray-700 font-medium">{item.label}</span>
-            </motion.button>
+                  {item.icon && (
+                    <motion.span 
+                      className="mr-3 text-gray-600"
+                      whileHover={{ scale: 1.1, rotate: 5 }}
+                    >
+                      {item.icon}
+                    </motion.span>
+                  )}
+                  <span className="text-gray-700 font-medium">{item.label}</span>
+                </motion.div>
+              </Link>
+            )
           ))}
         </nav>
 

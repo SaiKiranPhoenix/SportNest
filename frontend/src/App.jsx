@@ -9,8 +9,19 @@ const Register = lazy(() => import('./components/auth/Register'));
 const Login = lazy(() => import('./components/auth/Login'));
 const UserDashboard = lazy(() => import('./components/user/UserDashboard'));
 const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard'));
+const AddTurf = lazy(() => import('./components/admin/adminComponents/AddTurf'));
 
-// Auth guard for protected routes
+// Import user components
+const ExploreTurfs = lazy(() => import('./components/user/userComponents/ExploreTurfs'));
+const MyBookings = lazy(() => import('./components/user/userComponents/MyBookings'));
+const BookTurf = lazy(() => import('./components/user/userComponents/BookTurf'));
+const Favorites = lazy(() => import('./components/user/userComponents/Favorites'));
+const Payments = lazy(() => import('./components/user/userComponents/Payments'));
+const Reviews = lazy(() => import('./components/user/userComponents/Reviews'));
+const Notifications = lazy(() => import('./components/user/userComponents/Notifications'));
+const Profile = lazy(() => import('./components/user/userComponents/Profile'));
+const DashboardContent = lazy(() => import('./components/user/userComponents/DashboardContent'));
+
 const ProtectedRoute = ({ children, allowedRole }) => {
   const token = localStorage.getItem('token');
   const role = localStorage.getItem('role');
@@ -26,15 +37,13 @@ const ProtectedRoute = ({ children, allowedRole }) => {
   return children;
 };
 
-// Preload the components
 const preloadComponents = () => {
-  const components = [Register, Login, UserDashboard, AdminDashboard];
+  const components = [Register, Login, UserDashboard, AdminDashboard, AddTurf];
   components.forEach(component => {
     component.preload?.();
   });
 };
 
-// Call preload immediately
 preloadComponents();
 
 function AnimatedRoutes() {
@@ -48,23 +57,34 @@ function AnimatedRoutes() {
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
           
-          {/* Protected Dashboard Routes */}
-          <Route 
-            path="/user/dashboard" 
-            element={
-              <ProtectedRoute allowedRole="user">
-                <UserDashboard />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/admin/dashboard" 
-            element={
-              <ProtectedRoute allowedRole="admin">
-                <AdminDashboard />
-              </ProtectedRoute>
-            } 
-          />
+          {/* User Routes */}
+          <Route path="/user/*" element={
+            <ProtectedRoute allowedRole="user">
+              <UserDashboard />
+            </ProtectedRoute>
+          }>
+            <Route index element={<Navigate to="dashboard" />} />
+            <Route path="dashboard" element={<DashboardContent />} />
+            <Route path="explore-turfs" element={<ExploreTurfs />} />
+            <Route path="my-bookings" element={<MyBookings />} />
+            <Route path="book-turf" element={<BookTurf />} />
+            <Route path="favorites" element={<Favorites />} />
+            <Route path="payments" element={<Payments />} />
+            <Route path="reviews" element={<Reviews />} />
+            <Route path="notifications" element={<Notifications />} />
+            <Route path="profile" element={<Profile />} />
+          </Route>
+
+          {/* Admin Routes */}
+          <Route path="/admin/*" element={
+            <ProtectedRoute allowedRole="admin">
+              <AdminDashboard />
+            </ProtectedRoute>
+          }>
+            <Route index element={<Navigate to="dashboard" />} />
+            <Route path="dashboard" element={<DashboardContent />} />
+            <Route path="add-turf" element={<AddTurf />} />
+          </Route>
         </Routes>
       </Suspense>
     </AnimatePresence>
