@@ -9,7 +9,6 @@ import {
   FaUser
 } from 'react-icons/fa';
 import SideBar from '../common/SideBar';
-import AdminDashboardContent from './adminComponents/AdminDashboardContent';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -41,7 +40,6 @@ const AdminDashboard = () => {
     { label: 'Reports', icon: <FaMoneyBillAlt />, to: '/admin/reports' },
     { label: 'Reviews', icon: <FaStarHalfAlt />, to: '/admin/reviews' },
     { label: 'Notifications', icon: <FaBell />, to: '/admin/notifications' },
-    { label: 'Settings', icon: <FaCog />, to: '/admin/settings' },
     { label: 'Profile', icon: <FaUser />, to: '/admin/profile' },
     { label: 'Logout', icon: <FaSignOutAlt />, onClick: handleLogout },
   ];

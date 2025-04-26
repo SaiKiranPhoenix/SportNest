@@ -106,13 +106,32 @@ const turfSchema = new mongoose.Schema({
     }]
 });
 
+// Add notification schema
+const notificationSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    turfId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turf' },
+    type: { type: String, enum: ['booking', 'cancellation', 'review'], required: true },
+    message: String,
+    read: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const Notification = mongoose.model('Notification', notificationSchema);
+
+// Update booking schema to include admin contact
 const bookingSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     turfId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turf' },
     date: Date,
     slot: String,
     status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed' },
-    bookingDate: { type: Date, default: Date.now }
+    bookingDate: { type: Date, default: Date.now },
+    adminContact: {
+        name: String,
+        phone: String,
+        email: String
+    }
 });
 
 const User = mongoose.model('User', userSchema);
@@ -309,18 +328,61 @@ app.get('/turfs', authenticateToken, async (req, res) => {
 
 app.post('/bookings', authenticateToken, async (req, res) => {
     try {
+        const { turfId, date, slot } = req.body;
+
+        // Check if slot is already booked
+        const existingBooking = await Booking.findOne({
+            turfId,
+            date,
+            slot,
+            status: 'confirmed'
+        });
+
+        if (existingBooking) {
+            return res.status(400).json({ message: 'This slot is already booked' });
+        }
+
+        // Get turf and admin details
+        const turf = await Turf.findById(turfId);
+        if (!turf) {
+            return res.status(404).json({ message: 'Turf not found' });
+        }
+
+        const admin = await User.findById(turf.owner);
+        if (!admin) {
+            return res.status(404).json({ message: 'Turf admin not found' });
+        }
+
+        // Create booking with admin contact
         const booking = new Booking({
             userId: req.user.id,
-            ...req.body
+            turfId,
+            date,
+            slot,
+            adminContact: {
+                name: admin.name,
+                phone: admin.phone,
+                email: admin.email
+            }
         });
         await booking.save();
-        
+
+        // Create notification for admin
+        const notification = new Notification({
+            userId: req.user.id,
+            adminId: turf.owner,
+            turfId,
+            type: 'booking',
+            message: `New booking for ${turf.name} on ${new Date(date).toLocaleDateString()} at ${slot}`
+        });
+        await notification.save();
+
         // Update user's bookings array
         await User.findByIdAndUpdate(
             req.user.id,
             { $push: { bookings: booking._id } }
         );
-        
+
         res.status(201).json(booking);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -496,6 +558,56 @@ app.delete('/profile', authenticateToken, async (req, res) => {
         await User.findByIdAndDelete(user._id);
 
         res.json({ message: 'Account deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add notifications routes
+app.get('/notifications', authenticateToken, async (req, res) => {
+    try {
+        const notifications = await Notification.find({
+            $or: [
+                { userId: req.user.id },
+                { adminId: req.user.id }
+            ]
+        })
+        .populate('userId', 'name')
+        .populate('turfId', 'name')
+        .sort({ createdAt: -1 });
+        
+        res.json(notifications);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.put('/notifications/:id/read', authenticateToken, async (req, res) => {
+    try {
+        const notification = await Notification.findByIdAndUpdate(
+            req.params.id,
+            { read: true },
+            { new: true }
+        );
+        res.json(notification);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add endpoint to get booked slots
+app.get('/bookings/slots/:turfId', authenticateToken, async (req, res) => {
+    try {
+        const { turfId } = req.params;
+        const { date } = req.query;
+
+        const bookedSlots = await Booking.find({
+            turfId,
+            date: new Date(date),
+            status: 'confirmed'
+        }).select('slot');
+
+        res.json(bookedSlots.map(booking => booking.slot));
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

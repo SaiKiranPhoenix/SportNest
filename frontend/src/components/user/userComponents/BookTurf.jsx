@@ -9,6 +9,7 @@ const BookTurf = () => {
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('');
   const [loading, setLoading] = useState(true);
+  const [bookedSlots, setBookedSlots] = useState([]);
 
   // Animation variants
   const containerVariants = {
@@ -53,6 +54,31 @@ const BookTurf = () => {
     fetchTurfs();
   }, []);
 
+  const fetchBookedSlots = async (turfId, date) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`http://localhost:5000/bookings/slots/${turfId}`, {
+        params: { date },
+        headers: { Authorization: token }
+      });
+      setBookedSlots(response.data || []);
+    } catch (error) {
+      console.error('Error fetching booked slots:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedTurf && selectedDate) {
+      fetchBookedSlots(selectedTurf._id, selectedDate);
+    }
+  }, [selectedTurf, selectedDate]);
+
+  const timeSlots = [
+    '06:00-07:00', '07:00-08:00', '08:00-09:00', '09:00-10:00',
+    '16:00-17:00', '17:00-18:00', '18:00-19:00', '19:00-20:00',
+    '20:00-21:00'
+  ];
+
   const handleBooking = async () => {
     if (!selectedTurf || !selectedDate || !selectedSlot) {
       toast.error('Please select all booking details');
@@ -61,20 +87,29 @@ const BookTurf = () => {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/bookings', {
+      const response = await axios.post('http://localhost:5000/bookings', {
         turfId: selectedTurf._id,
         date: selectedDate,
         slot: selectedSlot
       }, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: token }
       });
       
-      toast.success('Booking successful!');
+      if (response.data.adminContact) {
+        toast.success('Booking successful! You can view admin contact details in My Bookings');
+      }
+      
+      // Reset form
       setSelectedTurf(null);
       setSelectedDate('');
       setSelectedSlot('');
+      setBookedSlots([]);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Booking failed');
+      if (error.response?.data?.message === 'This slot is already booked') {
+        toast.error('This slot has just been booked by someone else. Please choose another slot.');
+      } else {
+        toast.error(error.response?.data?.message || 'Booking failed');
+      }
     }
   };
 
@@ -137,9 +172,18 @@ const BookTurf = () => {
             }`}
             onClick={() => setSelectedTurf(turf)}
           >
+            {turf.images && turf.images[0] && (
+              <div 
+                className="h-48 bg-cover bg-center rounded-lg mb-4"
+                style={{ backgroundImage: `url(http://localhost:5000${turf.images[0].path})` }}
+              />
+            )}
             <h3 className="text-lg font-semibold text-gray-800">{turf.name}</h3>
             <p className="text-gray-600 mt-2">{turf.location}</p>
-            <p className="text-indigo-600 font-medium mt-4">₹{turf.price}/hour</p>
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-indigo-600 font-medium">₹{turf.price}/hour</p>
+              <span className="text-sm text-gray-500">{turf.sport}</span>
+            </div>
           </motion.div>
         ))}
       </motion.div>
@@ -172,22 +216,25 @@ const BookTurf = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Time Slot
               </label>
-              <select
-                value={selectedSlot}
-                onChange={(e) => setSelectedSlot(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              >
-                <option value="">Select a slot</option>
-                <option value="06:00-07:00">6:00 AM - 7:00 AM</option>
-                <option value="07:00-08:00">7:00 AM - 8:00 AM</option>
-                <option value="08:00-09:00">8:00 AM - 9:00 AM</option>
-                <option value="09:00-10:00">9:00 AM - 10:00 AM</option>
-                <option value="16:00-17:00">4:00 PM - 5:00 PM</option>
-                <option value="17:00-18:00">5:00 PM - 6:00 PM</option>
-                <option value="18:00-19:00">6:00 PM - 7:00 PM</option>
-                <option value="19:00-20:00">7:00 PM - 8:00 PM</option>
-                <option value="20:00-21:00">8:00 PM - 9:00 PM</option>
-              </select>
+              <div className="grid grid-cols-3 gap-2">
+                {timeSlots.map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    disabled={bookedSlots.includes(slot)}
+                    onClick={() => setSelectedSlot(slot)}
+                    className={`p-2 text-sm rounded-lg border ${
+                      selectedSlot === slot
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : bookedSlots.includes(slot)
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-500'
+                    }`}
+                  >
+                    {slot}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

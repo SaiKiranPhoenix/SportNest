@@ -31,7 +31,6 @@ const UserDashboard = () => {
 
   const menuItems = [
     { label: 'Home', icon: <FaHome />, to: '/user/dashboard' },
-    { label: 'Explore Turfs', icon: <FaRegCompass />, to: '/user/explore-turfs' },
     { label: 'My Bookings', icon: <FaCalendarCheck />, to: '/user/my-bookings' },
     { label: 'Book a Turf', icon: <FaCalendarCheck />, to: '/user/book-turf' },
     { label: 'Favorites', icon: <FaHeart />, to: '/user/favorites' },
