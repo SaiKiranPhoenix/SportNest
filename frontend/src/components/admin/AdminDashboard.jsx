@@ -5,9 +5,11 @@ import { motion } from 'framer-motion';
 import {
   FaChartBar, FaFutbol, FaCalendarAlt, FaUsers, FaMoneyBillAlt,
   FaBullhorn, FaStarHalfAlt, FaBell, FaCog, FaLifeRing, FaSignOutAlt,
-  FaPlusCircle
+  FaPlusCircle, FaListAlt,
+  FaUser
 } from 'react-icons/fa';
 import SideBar from '../common/SideBar';
+import AdminDashboardContent from './adminComponents/AdminDashboardContent';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -31,16 +33,16 @@ const AdminDashboard = () => {
   };
 
   const menuItems = [
-    { label: 'Dashboard', icon: <FaChartBar />, to: '/admin/dashboard' },
+    { label: 'Dashboard', icon: <FaChartBar />, to: '/admin' },
     { label: 'Add Turf', icon: <FaPlusCircle />, to: '/admin/add-turf' },
-    { label: 'Bookings', icon: <FaCalendarAlt />, to: '#' },
-    { label: 'Users', icon: <FaUsers />, to: '#' },
-    { label: 'Reports', icon: <FaMoneyBillAlt />, to: '#' },
-    { label: 'Promotions', icon: <FaBullhorn />, to: '#' },
-    { label: 'Reviews', icon: <FaStarHalfAlt />, to: '#' },
-    { label: 'Notifications', icon: <FaBell />, to: '#' },
-    { label: 'Settings', icon: <FaCog />, to: '#' },
-    { label: 'Support', icon: <FaLifeRing />, to: '#' },
+    { label: 'My Turfs', icon: <FaListAlt />, to: '/admin/my-turfs' },
+    { label: 'Bookings', icon: <FaCalendarAlt />, to: '/admin/bookings' },
+    { label: 'Users', icon: <FaUsers />, to: '/admin/users' },
+    { label: 'Reports', icon: <FaMoneyBillAlt />, to: '/admin/reports' },
+    { label: 'Reviews', icon: <FaStarHalfAlt />, to: '/admin/reviews' },
+    { label: 'Notifications', icon: <FaBell />, to: '/admin/notifications' },
+    { label: 'Settings', icon: <FaCog />, to: '/admin/settings' },
+    { label: 'Profile', icon: <FaUser />, to: '/admin/profile' },
     { label: 'Logout', icon: <FaSignOutAlt />, onClick: handleLogout },
   ];
 

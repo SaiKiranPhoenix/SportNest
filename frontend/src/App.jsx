@@ -10,6 +10,7 @@ const Login = lazy(() => import('./components/auth/Login'));
 const UserDashboard = lazy(() => import('./components/user/UserDashboard'));
 const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard'));
 const AddTurf = lazy(() => import('./components/admin/adminComponents/AddTurf'));
+const MyTurfs = lazy(() => import('./components/admin/adminComponents/MyTurfs'));
 
 // Import user components
 const ExploreTurfs = lazy(() => import('./components/user/userComponents/ExploreTurfs'));
@@ -21,6 +22,10 @@ const Reviews = lazy(() => import('./components/user/userComponents/Reviews'));
 const Notifications = lazy(() => import('./components/user/userComponents/Notifications'));
 const Profile = lazy(() => import('./components/user/userComponents/Profile'));
 const DashboardContent = lazy(() => import('./components/user/userComponents/DashboardContent'));
+const AdminDashboardContent = lazy(() => import('./components/admin/adminComponents/AdminDashboardContent'));
+
+// Import admin components
+const AdminProfile = lazy(() => import('./components/admin/adminComponents/AdminProfile'));
 
 const ProtectedRoute = ({ children, allowedRole }) => {
   const token = localStorage.getItem('token');
@@ -82,8 +87,10 @@ function AnimatedRoutes() {
             </ProtectedRoute>
           }>
             <Route index element={<Navigate to="dashboard" />} />
-            <Route path="dashboard" element={<DashboardContent />} />
+            <Route path="dashboard" element={<AdminDashboardContent />} />
             <Route path="add-turf" element={<AddTurf />} />
+            <Route path="my-turfs" element={<MyTurfs />} />
+            <Route path="profile" element={<AdminProfile />} />
           </Route>
         </Routes>
       </Suspense>

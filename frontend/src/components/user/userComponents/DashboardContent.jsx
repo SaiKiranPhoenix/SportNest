@@ -53,8 +53,8 @@ const DashboardContent = () => {
           whileTap={{ scale: 0.98 }}
           className="bg-white rounded-lg shadow-lg p-6"
         >
-          <h3 className="text-lg font-semibold text-indigo-600 mb-2">Quick Book</h3>
-          <p className="text-gray-600">Find and book a turf instantly</p>
+          <h3 className="text-lg font-semibold text-indigo-600 mb-2">Add Turf</h3>
+          <p className="text-gray-600">Click here to add turf</p>
         </motion.div>
 
         <motion.div
@@ -62,8 +62,8 @@ const DashboardContent = () => {
           whileTap={{ scale: 0.98 }}
           className="bg-white rounded-lg shadow-lg p-6"
         >
-          <h3 className="text-lg font-semibold text-indigo-600 mb-2">My Activities</h3>
-          <p className="text-gray-600">View your bookings and history</p>
+          <h3 className="text-lg font-semibold text-indigo-600 mb-2">My Users</h3>
+          <p className="text-gray-600">Click here to navigate to Users page</p>
         </motion.div>
 
         <motion.div
@@ -71,7 +71,7 @@ const DashboardContent = () => {
           whileTap={{ scale: 0.98 }}
           className="bg-white rounded-lg shadow-lg p-6"
         >
-          <h3 className="text-lg font-semibold text-indigo-600 mb-2">Favorites</h3>
+          <h3 className="text-lg font-semibold text-indigo-600 mb-2">Bookings</h3>
           <p className="text-gray-600">Access your saved turfs quickly</p>
         </motion.div>
       </motion.section>

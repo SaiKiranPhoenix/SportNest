@@ -10,6 +10,7 @@ const AddTurf = () => {
     sport: '',
     price: '',
     description: '',
+    address: '', // Added address field
   });
   const [selectedImages, setSelectedImages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -137,6 +138,7 @@ const AddTurf = () => {
       formDataToSend.append('sport', formData.sport);
       formDataToSend.append('price', formData.price);
       formDataToSend.append('description', formData.description);
+      formDataToSend.append('address', formData.address); // Added address field
       
       // Append each image file
       selectedImages.forEach(image => {
@@ -163,6 +165,7 @@ const AddTurf = () => {
         sport: '',
         price: '',
         description: '',
+        address: '', // Added address field reset
       });
       setSelectedImages([]);
       imagePreviews.forEach(url => URL.revokeObjectURL(url));
@@ -179,11 +182,11 @@ const AddTurf = () => {
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="max-w-4xl mx-auto py-6 px-4"
+      className="h-[calc(100vh-4rem)] overflow-y-auto px-4 py-4"
     >
       <motion.h2
         variants={itemVariants}
-        className="text-2xl font-semibold text-gray-800 mb-6"
+        className="text-xl font-semibold text-gray-800 mb-4"
       >
         Add New Turf
       </motion.h2>
@@ -191,11 +194,11 @@ const AddTurf = () => {
       <motion.form
         variants={containerVariants}
         onSubmit={handleSubmit}
-        className="space-y-6 bg-white rounded-xl shadow-lg p-6"
+        className="space-y-4 bg-white rounded-xl shadow-lg p-5"
       >
-        <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Turf Name
             </label>
             <input
@@ -204,13 +207,13 @@ const AddTurf = () => {
               required
               value={formData.name}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="Enter turf name"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Location
             </label>
             <select
@@ -218,7 +221,7 @@ const AddTurf = () => {
               required
               value={formData.location}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
             >
               <option value="">Select a city</option>
               {cities.map((city) => (
@@ -228,11 +231,26 @@ const AddTurf = () => {
               ))}
             </select>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Address
+            </label>
+            <input
+              type="text"
+              name="address"
+              required
+              value={formData.address}
+              onChange={handleChange}
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Enter complete address"
+            />
+          </div>
         </motion.div>
 
-        <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Sport
             </label>
             <select
@@ -240,7 +258,7 @@ const AddTurf = () => {
               required
               value={formData.sport}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
             >
               <option value="">Select a sport</option>
               {sports.map((sport) => (
@@ -252,7 +270,7 @@ const AddTurf = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Price per Hour (₹)
             </label>
             <input
@@ -262,14 +280,14 @@ const AddTurf = () => {
               min="0"
               value={formData.price}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="Enter price per hour"
             />
           </div>
         </motion.div>
 
         <motion.div variants={itemVariants}>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Description
           </label>
           <textarea
@@ -277,24 +295,24 @@ const AddTurf = () => {
             required
             value={formData.description}
             onChange={handleChange}
-            rows="4"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            rows="3"
+            className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
             placeholder="Enter turf description"
           />
         </motion.div>
 
         <motion.div variants={itemVariants}>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Images (Maximum 5)
           </label>
-          <div className="mt-2 space-y-4">
+          <div className="mt-1 space-y-3">
             <div className="flex items-center justify-center w-full">
-              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                <div className="flex flex-col items-center justify-center pt-4 pb-5">
+                  <svg className="w-6 h-6 mb-2 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
                     <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
                   </svg>
-                  <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                  <p className="text-sm text-gray-500"><span className="font-medium">Click to upload</span> or drag and drop</p>
                   <p className="text-xs text-gray-500">PNG, JPG or GIF (MAX. 5MB each)</p>
                 </div>
                 <input 
@@ -309,20 +327,20 @@ const AddTurf = () => {
             </div>
 
             {imagePreviews.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                 {imagePreviews.map((preview, index) => (
                   <div key={index} className="relative group">
                     <img
                       src={preview}
                       alt={`Preview ${index + 1}`}
-                      className="w-full h-32 object-cover rounded-lg"
+                      className="w-full h-24 object-cover rounded-lg"
                     />
                     <button
                       type="button"
                       onClick={() => removeImage(index)}
-                      className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
@@ -335,19 +353,19 @@ const AddTurf = () => {
 
         <motion.div
           variants={itemVariants}
-          className="pt-4"
+          className="pt-2 flex justify-end"
         >
           <button
             type="submit"
             disabled={loading}
-            className={`w-full md:w-auto px-6 py-2.5 text-white font-medium rounded-lg ${
+            className={`px-6 py-2 text-white font-medium rounded-lg ${
               loading ? 'bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700'
-            } transition-colors duration-200 flex items-center justify-center`}
+            } transition-colors duration-200 flex items-center justify-center min-w-[120px]`}
           >
             {loading ? (
               <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 0 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             ) : (
               'Add Turf'

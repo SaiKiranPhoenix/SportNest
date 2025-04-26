@@ -57,6 +57,10 @@ const userSchema = new mongoose.Schema({
     password: String,
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     phone: String,
+    profilePicture: {
+        filename: String,
+        path: String
+    },
     bookings: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Booking' }]
 });
 
@@ -65,6 +69,15 @@ const turfSchema = new mongoose.Schema({
     location: {
         type: String,
         enum: ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Kolkata', 'Ahmedabad', 'Pune', 'Jaipur', 'Lucknow'],
+        required: true
+    },
+    address: {
+        type: String,
+        required: true
+    },
+    owner: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
         required: true
     },
     sport: {
@@ -171,7 +184,7 @@ app.post('/login', async (req, res) => {
 // Admin Routes
 app.post('/turfs', authenticateToken, isAdmin, upload.array('images', 5), async (req, res) => {
     try {
-        const { name, location, sport, price, description, availability } = req.body;
+        const { name, location, sport, price, description, availability, address } = req.body;
         
         const turfData = {
             name,
@@ -179,6 +192,8 @@ app.post('/turfs', authenticateToken, isAdmin, upload.array('images', 5), async 
             sport,
             price: Number(price),
             description,
+            address,
+            owner: req.user.id,
             availability: JSON.parse(availability),
             images: req.files.map(file => ({
                 filename: file.filename,
@@ -202,9 +217,9 @@ app.post('/turfs', authenticateToken, isAdmin, upload.array('images', 5), async 
 
 app.put('/turfs/:id', authenticateToken, isAdmin, upload.array('images', 5), async (req, res) => {
     try {
-        const turf = await Turf.findById(req.params.id);
+        const turf = await Turf.findOne({ _id: req.params.id, owner: req.user.id });
         if (!turf) {
-            return res.status(404).json({ message: 'Turf not found' });
+            return res.status(404).json({ message: 'Turf not found or unauthorized' });
         }
 
         // Delete old images if new ones are uploaded
@@ -242,9 +257,9 @@ app.put('/turfs/:id', authenticateToken, isAdmin, upload.array('images', 5), asy
 
 app.delete('/turfs/:id', authenticateToken, isAdmin, async (req, res) => {
     try {
-        const turf = await Turf.findById(req.params.id);
+        const turf = await Turf.findOne({ _id: req.params.id, owner: req.user.id });
         if (!turf) {
-            return res.status(404).json({ message: 'Turf not found' });
+            return res.status(404).json({ message: 'Turf not found or unauthorized' });
         }
 
         // Delete image files
@@ -261,6 +276,17 @@ app.delete('/turfs/:id', authenticateToken, isAdmin, async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
+
+// Add route for getting admin's own turfs
+app.get('/admin/turfs', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const turfs = await Turf.find({ owner: req.user.id });
+        res.json(turfs);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
 
 app.get('/users', authenticateToken, isAdmin, async (req, res) => {
     try {
@@ -364,6 +390,112 @@ app.put('/profile', authenticateToken, async (req, res) => {
             { new: true }
         ).select('-password');
         res.json(user);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add profile picture upload endpoint
+app.post('/profile/picture', authenticateToken, upload.single('profilePicture'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Delete old profile picture if exists
+        if (user.profilePicture && user.profilePicture.filename) {
+            const oldFilePath = path.join(__dirname, 'uploads', user.profilePicture.filename);
+            if (fs.existsSync(oldFilePath)) {
+                fs.unlinkSync(oldFilePath);
+            }
+        }
+
+        // Update user with new profile picture
+        user.profilePicture = {
+            filename: req.file.filename,
+            path: `/uploads/${req.file.filename}`
+        };
+        await user.save();
+
+        res.json(user.profilePicture);
+    } catch (error) {
+        // Delete uploaded file if operation fails
+        if (req.file) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add change password endpoint
+app.post('/profile/change-password', authenticateToken, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const user = await User.findById(req.user.id);
+        
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Verify current password
+        const validPassword = await bcrypt.compare(currentPassword, user.password);
+        if (!validPassword) {
+            return res.status(400).json({ message: 'Current password is incorrect' });
+        }
+
+        // Hash and update new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        user.password = hashedPassword;
+        await user.save();
+
+        res.json({ message: 'Password updated successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add delete account endpoint
+app.delete('/profile', authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Delete profile picture if exists
+        if (user.profilePicture && user.profilePicture.filename) {
+            const filePath = path.join(__dirname, 'uploads', user.profilePicture.filename);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        }
+
+        // Delete user's turfs and their images
+        const turfs = await Turf.find({ owner: user._id });
+        for (const turf of turfs) {
+            // Delete turf images
+            turf.images.forEach(image => {
+                const filePath = path.join(__dirname, 'uploads', image.filename);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            });
+        }
+        await Turf.deleteMany({ owner: user._id });
+
+        // Delete user's bookings
+        await Booking.deleteMany({ userId: user._id });
+
+        // Finally delete the user
+        await User.findByIdAndDelete(user._id);
+
+        res.json({ message: 'Account deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
