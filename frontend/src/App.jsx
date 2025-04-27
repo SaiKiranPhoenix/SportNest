@@ -19,6 +19,7 @@ const MyTurfs = lazy(() => import('./components/admin/adminComponents/MyTurfs'))
 const AdminProfile = lazy(() => import('./components/admin/adminComponents/AdminProfile'));
 const AdminDashboardContent = lazy(() => import('./components/admin/adminComponents/AdminDashboardContent'));
 const Bookings = lazy(() => import('./components/admin/adminComponents/Bookings'));
+const Reports = lazy(() => import('./components/admin/adminComponents/Reports'));
 
 // User components
 const UserHome = lazy(() => import('./components/user/userComponents/UserHome'));
@@ -135,6 +136,7 @@ function AnimatedRoutes() {
               <Route path="add-turf" element={<AddTurf />} />
               <Route path="my-turfs" element={<MyTurfs />} />
               <Route path="bookings" element={<Bookings />} />
+              <Route path="reports" element={<Reports />} />
               <Route path="profile" element={<AdminProfile />} />
             </Route>
           </Routes>

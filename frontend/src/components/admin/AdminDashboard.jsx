@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
-import { toast } from 'react-toastify';
 import { motion } from 'framer-motion';
+import { toast } from 'react-toastify';
 import {
   FaChartBar, FaFutbol, FaCalendarAlt, FaUsers, FaMoneyBillAlt,
   FaBullhorn, FaStarHalfAlt, FaBell, FaCog, FaLifeRing, FaSignOutAlt,
-  FaPlusCircle, FaListAlt,
-  FaUser
+  FaPlusCircle, FaListAlt, FaUser
 } from 'react-icons/fa';
 import SideBar from '../common/SideBar';
 
@@ -32,13 +31,11 @@ const AdminDashboard = () => {
   };
 
   const menuItems = [
-    { label: 'Dashboard', icon: <FaChartBar />, to: '/admin' },
+    { label: 'Dashboard', icon: <FaChartBar />, to: '/admin/dashboard' },
     { label: 'Add Turf', icon: <FaPlusCircle />, to: '/admin/add-turf' },
     { label: 'My Turfs', icon: <FaListAlt />, to: '/admin/my-turfs' },
     { label: 'Bookings', icon: <FaCalendarAlt />, to: '/admin/bookings' },
-    { label: 'Users', icon: <FaUsers />, to: '/admin/users' },
     { label: 'Reports', icon: <FaMoneyBillAlt />, to: '/admin/reports' },
-    { label: 'Reviews', icon: <FaStarHalfAlt />, to: '/admin/reviews' },
     { label: 'Notifications', icon: <FaBell />, to: '/admin/notifications' },
     { label: 'Profile', icon: <FaUser />, to: '/admin/profile' },
     { label: 'Logout', icon: <FaSignOutAlt />, onClick: handleLogout },
@@ -50,10 +47,21 @@ const AdminDashboard = () => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="flex items-center justify-center min-h-screen bg-slate-50"
+        className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50"
       >
         <div className="relative">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-indigo-500 border-solid"></div>
+          <motion.div
+            animate={{
+              scale: [1, 1.2, 1],
+              rotate: [0, 180, 360],
+            }}
+            transition={{
+              duration: 2,
+              repeat: Infinity,
+              ease: "easeInOut"
+            }}
+            className="w-16 h-16 border-4 border-primary-200 border-t-primary-600 rounded-full"
+          />
           <motion.div
             animate={{
               scale: [1, 1.2, 1],
@@ -65,7 +73,7 @@ const AdminDashboard = () => {
             }}
             className="absolute inset-0 flex items-center justify-center"
           >
-            <div className="h-6 w-6 rounded-full bg-indigo-500"></div>
+            <div className="w-8 h-8 bg-primary-500 rounded-full opacity-30"></div>
           </motion.div>
         </div>
       </motion.div>
@@ -73,20 +81,37 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 animate-gradient">
+      <div className="absolute inset-0 bg-gradient-radial from-transparent to-white/30 pointer-events-none" />
+      
       <SideBar
         brand={
-          <motion.span
+          <motion.div
             initial={{ x: -20, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.5 }}
-            className="text-2xl font-bold text-indigo-600"
+            className="flex items-center space-x-2"
           >
-            SportNest Admin
-          </motion.span>
+            <motion.div
+              animate={{
+                rotate: [0, 10, -10, 0],
+              }}
+              transition={{
+                duration: 4,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              className="text-2xl text-primary-600"
+            >
+              <FaFutbol />
+            </motion.div>
+            <span className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-text text-transparent">
+              SportNest Admin
+            </span>
+          </motion.div>
         }
         menuItems={menuItems}
-        className="bg-white shadow-lg"
+        className="bg-white/80 backdrop-blur-md shadow-lg border-r border-gray-100"
         footer={
           <motion.div
             initial={{ opacity: 0 }}
@@ -100,9 +125,14 @@ const AdminDashboard = () => {
       />
 
       <main className="pt-6 pb-8 md:pl-[280px] transition-all duration-300">
-        <div className="px-4 sm:px-6 md:px-8 max-w-[1600px] mx-auto">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="px-4 sm:px-6 md:px-8 max-w-[1600px] mx-auto"
+        >
           <Outlet />
-        </div>
+        </motion.div>
       </main>
     </div>
   );

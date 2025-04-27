@@ -343,8 +343,17 @@ const MyTurfs = () => {
   }
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-semibold text-gray-800 mb-6">My Turfs</h2>
+    <div className="min-h-[calc(100vh-4rem)] p-6 bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex justify-between items-center bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-xl text-white shadow-lg mb-6"
+      >
+        <div>
+          <h1 className="text-3xl font-bold">My Turfs</h1>
+          <p className="text-indigo-100 mt-1">Manage your turf listings</p>
+        </div>
+      </motion.div>
 
       {turfs.length === 0 ? (
         <motion.div
@@ -361,8 +370,10 @@ const MyTurfs = () => {
           {turfs.map((turf) => (
             <motion.div
               key={turf._id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               whileHover={{ y: -5 }}
-              className="bg-white rounded-lg shadow-md overflow-hidden"
+              className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
             >
               <div
                 className="h-48 bg-cover bg-center cursor-pointer"

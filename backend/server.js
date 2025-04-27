@@ -319,7 +319,25 @@ app.get('/users', authenticateToken, isAdmin, async (req, res) => {
 // User Routes
 app.get('/turfs', authenticateToken, async (req, res) => {
     try {
-        const turfs = await Turf.find({});
+        const { location, sport, minPrice, maxPrice, sortBy, sortOrder } = req.query;
+        
+        // Build filter query
+        const filter = {};
+        if (location) filter.location = location;
+        if (sport) filter.sport = sport;
+        if (minPrice || maxPrice) {
+            filter.price = {};
+            if (minPrice) filter.price.$gte = Number(minPrice);
+            if (maxPrice) filter.price.$lte = Number(maxPrice);
+        }
+
+        // Build sort query
+        const sort = {};
+        if (sortBy) {
+            sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+        }
+
+        const turfs = await Turf.find(filter).sort(sort);
         res.json(turfs);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -608,6 +626,500 @@ app.get('/bookings/slots/:turfId', authenticateToken, async (req, res) => {
         }).select('slot');
 
         res.json(bookedSlots.map(booking => booking.slot));
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Admin Routes
+app.get('/admin/bookings', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        // First get all turfs owned by the admin
+        const adminTurfs = await Turf.find({ owner: req.user.id });
+        const turfIds = adminTurfs.map(turf => turf._id);
+
+        // Get bookings for these turfs
+        const bookings = await Booking.find({ turfId: { $in: turfIds } })
+            .populate('userId', 'name email phone')
+            .populate('turfId', 'name location price')
+            .sort({ bookingDate: -1 });
+
+        const formattedBookings = bookings.map(booking => ({
+            _id: booking._id,
+            userName: booking.userId.name,
+            userEmail: booking.userId.email,
+            userPhone: booking.userId.phone,
+            turfName: booking.turfId.name,
+            turfLocation: booking.turfId.location,
+            amount: booking.turfId.price,
+            bookingDate: booking.date,
+            timeSlot: booking.slot,
+            status: booking.status,
+            createdAt: booking.bookingDate
+        }));
+
+        res.json(formattedBookings);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add endpoint for deleting a booking
+app.delete('/admin/bookings/:id', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const booking = await Booking.findById(id);
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // Verify that the turf belongs to this admin
+        const turf = await Turf.findById(booking.turfId);
+        if (turf.owner.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Not authorized to delete this booking' });
+        }
+
+        // Create notification for user about booking deletion
+        const notification = new Notification({
+            userId: booking.userId,
+            adminId: req.user.id,
+            turfId: booking.turfId,
+            type: 'cancellation',
+            message: `Your booking for ${turf.name} has been deleted by the admin`
+        });
+        await notification.save();
+
+        // Delete the booking
+        await Booking.findByIdAndDelete(id);
+        
+        res.json({ message: 'Booking deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add endpoint to update booking status
+app.put('/admin/bookings/:id/status', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        const booking = await Booking.findById(id);
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        // Verify that the turf belongs to this admin
+        const turf = await Turf.findById(booking.turfId);
+        if (turf.owner.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Not authorized to update this booking' });
+        }
+
+        booking.status = status;
+        await booking.save();
+
+        // Create notification for user
+        const notification = new Notification({
+            userId: booking.userId,
+            adminId: req.user.id,
+            turfId: booking.turfId,
+            type: status === 'confirmed' ? 'booking' : 'cancellation',
+            message: `Your booking for ${turf.name} has been ${status}`
+        });
+        await notification.save();
+
+        res.json(booking);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add report routes
+app.get('/admin/reports/overview', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const { timeframe } = req.query; // daily, weekly, monthly, yearly
+        const adminId = req.user.id;
+
+        // Get admin's turfs
+        const turfs = await Turf.find({ owner: adminId });
+        const turfIds = turfs.map(turf => turf._id);
+
+        // Get all bookings for these turfs
+        const bookings = await Booking.find({
+            turfId: { $in: turfIds },
+            bookingDate: {
+                $gte: new Date(new Date().setDate(new Date().getDate() - 30)) // Last 30 days
+            }
+        }).populate('turfId').populate('userId');
+
+        // Calculate revenue metrics
+        const totalRevenue = bookings.reduce((sum, booking) => sum + booking.turfId.price, 0);
+        const confirmedBookings = bookings.filter(b => b.status === 'confirmed').length;
+        const cancelledBookings = bookings.filter(b => b.status === 'cancelled').length;
+
+        // Calculate revenue by turf
+        const revenueByTurf = {};
+        turfs.forEach(turf => {
+            const turfBookings = bookings.filter(b => b.turfId._id.toString() === turf._id.toString());
+            revenueByTurf[turf.name] = turfBookings.reduce((sum, b) => sum + b.turfId.price, 0);
+        });
+
+        // Calculate revenue by day for the chart
+        const revenueByDay = {};
+        bookings.forEach(booking => {
+            const date = booking.bookingDate.toISOString().split('T')[0];
+            revenueByDay[date] = (revenueByDay[date] || 0) + booking.turfId.price;
+        });
+
+        // Popular time slots
+        const timeSlotStats = {};
+        bookings.forEach(booking => {
+            timeSlotStats[booking.slot] = (timeSlotStats[booking.slot] || 0) + 1;
+        });
+
+        // Customer demographics
+        const customerLocations = {};
+        const customerPreferences = {};
+        bookings.forEach(booking => {
+            customerLocations[booking.turfId.location] = (customerLocations[booking.turfId.location] || 0) + 1;
+            customerPreferences[booking.turfId.sport] = (customerPreferences[booking.turfId.sport] || 0) + 1;
+        });
+
+        res.json({
+            overview: {
+                totalRevenue,
+                confirmedBookings,
+                cancelledBookings,
+                totalBookings: bookings.length,
+                averageBookingValue: totalRevenue / bookings.length || 0
+            },
+            revenueByTurf,
+            revenueByDay,
+            timeSlotStats,
+            customerInsights: {
+                locations: customerLocations,
+                preferences: customerPreferences
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.get('/admin/reports/detailed', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        const adminId = req.user.id;
+
+        const turfs = await Turf.find({ owner: adminId });
+        const turfIds = turfs.map(turf => turf._id);
+
+        const dateFilter = {
+            bookingDate: {
+                $gte: new Date(startDate),
+                $lte: new Date(endDate)
+            }
+        };
+
+        const bookings = await Booking.find({
+            ...dateFilter,
+            turfId: { $in: turfIds }
+        })
+        .populate('turfId')
+        .populate('userId');
+
+        // Detailed analytics calculations
+        const detailedStats = {
+            dailyRevenue: {},
+            sportTypeBreakdown: {},
+            peakHours: {},
+            customerRetention: {},
+            bookingTrends: {},
+            seasonalTrends: {}
+        };
+
+        // Calculate various metrics
+        bookings.forEach(booking => {
+            const date = booking.bookingDate.toISOString().split('T')[0];
+            const hour = booking.slot.split(':')[0];
+            const sport = booking.turfId.sport;
+            const userId = booking.userId._id.toString();
+            const month = new Date(booking.bookingDate).getMonth();
+
+            // Daily revenue
+            detailedStats.dailyRevenue[date] = (detailedStats.dailyRevenue[date] || 0) + booking.turfId.price;
+
+            // Sport type breakdown
+            detailedStats.sportTypeBreakdown[sport] = (detailedStats.sportTypeBreakdown[sport] || 0) + 1;
+
+            // Peak hours analysis
+            detailedStats.peakHours[hour] = (detailedStats.peakHours[hour] || 0) + 1;
+
+            // Customer retention
+            detailedStats.customerRetention[userId] = (detailedStats.customerRetention[userId] || 0) + 1;
+
+            // Seasonal trends
+            detailedStats.seasonalTrends[month] = (detailedStats.seasonalTrends[month] || 0) + booking.turfId.price;
+        });
+
+        res.json(detailedStats);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add dashboard stats endpoint
+app.get('/admin/dashboard/stats', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const adminId = req.user.id;
+
+        // Get admin's turfs
+        const turfs = await Turf.find({ owner: adminId });
+        const turfIds = turfs.map(turf => turf._id);
+
+        // Get current date and start of today
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        // Get all bookings for these turfs
+        const allBookings = await Booking.find({
+            turfId: { $in: turfIds }
+        }).populate('userId');
+
+        // Get today's bookings
+        const todayBookings = allBookings.filter(booking => 
+            booking.bookingDate >= startOfToday
+        );
+
+        // Get this month's bookings
+        const monthBookings = allBookings.filter(booking =>
+            booking.bookingDate >= startOfMonth
+        );
+
+        // Calculate total revenue
+        const totalRevenue = allBookings.reduce((sum, booking) => sum + booking.turfId.price, 0);
+
+        // Get recent bookings
+        const recentBookings = await Booking.find({ turfId: { $in: turfIds } })
+            .sort({ bookingDate: -1 })
+            .limit(5)
+            .populate('userId', 'name')
+            .populate('turfId', 'name')
+            .lean();
+
+        // Count active users (users with bookings this month)
+        const activeUsers = new Set(monthBookings.map(booking => booking.userId._id.toString())).size;
+
+        const stats = {
+            totalBookings: allBookings.length,
+            totalRevenue,
+            activeUsers,
+            totalTurfs: turfs.length,
+            recentBookings: recentBookings.map(booking => ({
+                id: booking._id,
+                user: booking.userId.name,
+                turf: booking.turfId.name,
+                date: booking.date,
+                time: booking.slot,
+                status: booking.status
+            }))
+        };
+
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// User dashboard stats endpoint
+app.get('/user/dashboard/stats', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const user = await User.findById(userId).select('name');
+
+        // Get all user's bookings
+        const bookings = await Booking.find({ userId })
+            .populate('turfId')
+            .sort({ bookingDate: -1 });
+
+        // Calculate activity stats
+        const sportsPlayed = new Set(bookings.map(b => b.turfId.sport)).size;
+        const sportCounts = {};
+        let totalHours = 0;
+
+        bookings.forEach(booking => {
+            sportCounts[booking.turfId.sport] = (sportCounts[booking.turfId.sport] || 0) + 1;
+            // Assuming each booking is for 1 hour
+            totalHours += 1;
+        });
+
+        const favoriteGame = Object.entries(sportCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+
+        // Get upcoming booking
+        const now = new Date();
+        const upcomingBooking = await Booking.findOne({
+            userId,
+            date: { $gte: now },
+            status: 'confirmed'
+        })
+        .populate('turfId')
+        .sort({ date: 1 });
+
+        // Get recent bookings
+        const recentBookings = await Booking.find({
+            userId,
+            status: 'confirmed'
+        })
+        .populate('turfId')
+        .sort({ date: -1 })
+        .limit(5);
+
+        // Get favorite venues (most booked)
+        const bookingsByVenue = {};
+        bookings.forEach(booking => {
+            const turfId = booking.turfId._id.toString();
+            if (!bookingsByVenue[turfId]) {
+                bookingsByVenue[turfId] = {
+                    id: turfId,
+                    name: booking.turfId.name,
+                    count: 0,
+                    rating: booking.turfId.reviews?.reduce((acc, r) => acc + r.rating, 0) / 
+                           (booking.turfId.reviews?.length || 1)
+                };
+            }
+            bookingsByVenue[turfId].count++;
+        });
+
+        const favoriteVenues = Object.values(bookingsByVenue)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 3);
+
+        // Get weekly activity data
+        const weeklyActivity = Array(7).fill(0);
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+        bookings.forEach(booking => {
+            if (booking.date >= oneWeekAgo) {
+                const dayIndex = new Date(booking.date).getDay();
+                weeklyActivity[dayIndex]++;
+            }
+        });
+
+        // Normalize weekly activity for chart (0 to 1 scale)
+        const maxActivity = Math.max(...weeklyActivity, 1);
+        const normalizedActivity = weeklyActivity.map(count => count / maxActivity);
+
+        // Get weather data (simulated for now)
+        const weather = {
+            temp: 28,
+            condition: 'Sunny',
+            humidity: 65,
+            idealForSports: true
+        };
+
+        const dashboardData = {
+            name: user.name,
+            activityStats: {
+                totalBookings: bookings.length,
+                sportsPlayed,
+                favoriteGame,
+                hoursPlayed: totalHours
+            },
+            upcomingBooking: upcomingBooking ? {
+                venue: upcomingBooking.turfId.name,
+                date: upcomingBooking.date,
+                time: upcomingBooking.slot,
+                sport: upcomingBooking.turfId.sport
+            } : null,
+            recentBookings: recentBookings.map(booking => ({
+                id: booking._id,
+                venue: booking.turfId.name,
+                date: booking.date,
+                time: booking.slot,
+                sport: booking.turfId.sport
+            })),
+            favoriteVenues,
+            weeklyActivity: {
+                data: normalizedActivity,
+                labels: days
+            },
+            weather
+        };
+
+        res.json(dashboardData);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Add favorite schema
+const favoriteSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    turfId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turf', required: true },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const Favorite = mongoose.model('Favorite', favoriteSchema);
+
+// Add favorites routes
+app.get('/user/favorites', authenticateToken, async (req, res) => {
+    try {
+        const favorites = await Favorite.find({ userId: req.user.id })
+            .populate('turfId')
+            .sort({ createdAt: -1 });
+        
+        // Map to return turf details directly
+        const turfs = favorites.map(fav => fav.turfId);
+        res.json(turfs);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.post('/user/favorites/:turfId', authenticateToken, async (req, res) => {
+    try {
+        const { turfId } = req.params;
+        
+        // Check if turf exists
+        const turf = await Turf.findById(turfId);
+        if (!turf) {
+            return res.status(404).json({ message: 'Turf not found' });
+        }
+
+        // Check if already favorited
+        const existingFavorite = await Favorite.findOne({ 
+            userId: req.user.id, 
+            turfId 
+        });
+        
+        if (existingFavorite) {
+            return res.status(400).json({ message: 'Turf already in favorites' });
+        }
+
+        const favorite = new Favorite({
+            userId: req.user.id,
+            turfId
+        });
+        await favorite.save();
+
+        res.status(201).json(favorite);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.delete('/user/favorites/:turfId', authenticateToken, async (req, res) => {
+    try {
+        const { turfId } = req.params;
+        await Favorite.findOneAndDelete({ 
+            userId: req.user.id, 
+            turfId 
+        });
+        res.json({ message: 'Removed from favorites' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

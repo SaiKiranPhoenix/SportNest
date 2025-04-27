@@ -14,7 +14,9 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
         type: "spring",
         stiffness: 300,
         damping: 30,
-        mass: 0.8
+        mass: 0.8,
+        staggerChildren: 0.1,
+        delayChildren: 0.2
       }
     },
     closed: {
@@ -23,7 +25,9 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
       transition: {
         type: "spring",
         stiffness: 400,
-        damping: 40
+        damping: 40,
+        staggerChildren: 0.05,
+        staggerDirection: -1
       }
     }
   };
@@ -70,7 +74,7 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
         animate={{ opacity: 1, scale: 1 }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        className={`fixed top-4 left-4 z-50 ${mobileBreakpoint}:hidden p-2.5 rounded-lg bg-white shadow-lg`}
+        className={`fixed top-4 left-4 z-50 ${mobileBreakpoint}:hidden p-3 rounded-xl bg-white/80 backdrop-blur-sm shadow-lg border border-gray-100`}
         onClick={() => setOpen(!open)}
         aria-label="Toggle sidebar"
       >
@@ -78,23 +82,26 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
           <motion.span 
             animate={{ 
               rotate: open ? 45 : 0,
-              y: open ? 8 : 0
+              y: open ? 8 : 0,
+              backgroundColor: open ? "#6d28d9" : "#1f2937"
             }}
-            className="block w-6 h-0.5 bg-gray-800 transform-gpu transition-transform duration-200"
+            className="block w-6 h-0.5 bg-gray-800 transform-gpu transition-all duration-200"
           />
           <motion.span 
             animate={{ 
               opacity: open ? 0 : 1,
-              x: open ? -20 : 0
+              x: open ? -20 : 0,
+              backgroundColor: "#1f2937"
             }}
             className="block w-6 h-0.5 bg-gray-800 transition-all duration-200"
           />
           <motion.span 
             animate={{ 
               rotate: open ? -45 : 0,
-              y: open ? -8 : 0
+              y: open ? -8 : 0,
+              backgroundColor: open ? "#6d28d9" : "#1f2937"
             }}
-            className="block w-6 h-0.5 bg-gray-800 transform-gpu transition-transform duration-200"
+            className="block w-6 h-0.5 bg-gray-800 transform-gpu transition-all duration-200"
           />
         </div>
       </motion.button>
@@ -107,7 +114,7 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
             animate="open"
             exit="closed"
             variants={overlayVariants}
-            className="fixed inset-0 bg-black/30 z-30 md:hidden backdrop-blur-sm"
+            className="fixed inset-0 bg-black/20 z-30 md:hidden backdrop-blur-sm"
             onClick={() => setOpen(false)}
           />
         )}
@@ -120,7 +127,7 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
           x: open ? 0 : window.innerWidth >= 768 ? 0 : "-100%",
           opacity: 1
         }}
-        className={`fixed top-0 left-0 h-full w-[280px] bg-white shadow-xl z-40
+        className={`fixed top-0 left-0 h-full w-[280px] bg-white/80 backdrop-blur-md shadow-xl z-40 border-r border-gray-100
           ${className}`}
       >
         {/* Brand/logo */}
@@ -128,7 +135,7 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="flex items-center justify-center h-16 border-b"
+          className="flex items-center justify-center h-16 border-b border-gray-100/50"
         >
           {brand}
         </motion.div>
@@ -140,9 +147,13 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
               <motion.button
                 key={idx}
                 initial={false}
-                whileHover={{ x: 4, backgroundColor: "#f3f4f6" }}
+                whileHover={{ 
+                  x: 4,
+                  backgroundColor: "rgba(249, 250, 251, 0.8)",
+                  transition: { duration: 0.2 }
+                }}
                 whileTap={{ scale: 0.98 }}
-                className="flex items-center w-full px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-all duration-200"
+                className="flex items-center w-full px-4 py-3 rounded-xl hover:bg-gray-50/80 transition-all duration-200"
                 onClick={() => {
                   item.onClick();
                   if (window.innerWidth < 768) setOpen(false);
@@ -162,7 +173,7 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
               <Link
                 key={idx}
                 to={item.to}
-                className="flex items-center w-full px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-all duration-200"
+                className="flex items-center w-full px-4 py-3 rounded-xl hover:bg-gray-50/80 transition-all duration-200"
                 onClick={() => {
                   if (window.innerWidth < 768) setOpen(false);
                 }}
@@ -194,7 +205,7 @@ const SideBar = ({ brand, menuItems, footer, className = '', mobileBreakpoint = 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
-            className="absolute bottom-0 w-full p-4 border-t"
+            className="px-4 py-6 border-t border-gray-100/50"
           >
             {footer}
           </motion.div>

@@ -182,19 +182,23 @@ const AddTurf = () => {
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="h-[calc(100vh-4rem)] overflow-y-auto px-4 py-4"
+      className="min-h-[calc(100vh-4rem)] p-6 bg-gradient-to-br from-indigo-50 via-white to-purple-50"
     >
-      <motion.h2
-        variants={itemVariants}
-        className="text-xl font-semibold text-gray-800 mb-4"
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex justify-between items-center bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-xl text-white shadow-lg mb-6"
       >
-        Add New Turf
-      </motion.h2>
+        <div>
+          <h1 className="text-3xl font-bold">Add New Turf</h1>
+          <p className="text-indigo-100 mt-1">Create a new turf listing</p>
+        </div>
+      </motion.div>
 
       <motion.form
         variants={containerVariants}
         onSubmit={handleSubmit}
-        className="space-y-4 bg-white rounded-xl shadow-lg p-5"
+        className="bg-white rounded-xl shadow-lg border border-gray-100 p-6"
       >
         <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

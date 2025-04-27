@@ -329,30 +329,36 @@ const AdminProfile = () => {
   }
 
   return (
-    <div className="min-h-[calc(100vh-6rem)] py-6 px-4">
+    <div className="min-h-[calc(100vh-4rem)] p-6 bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="flex justify-between items-center bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-xl text-white shadow-lg mb-6"
+      >
+        <div>
+          <h1 className="text-3xl font-bold">Admin Profile</h1>
+          <p className="text-indigo-100 mt-1">Manage your profile settings</p>
+        </div>
+        {!isEditing && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleEditClick}
+            className="flex items-center px-4 py-2 bg-white/10 backdrop-blur-sm rounded-lg text-white border border-white/20 hover:bg-white/20"
+          >
+            <FaEdit className="mr-2" />
+            <span>Edit Profile</span>
+          </motion.button>
+        )}
+      </motion.div>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden"
+        className="max-w-2xl mx-auto bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
       >
-        <div className="sticky top-0 z-10 bg-white px-6 py-4 border-b">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-gray-800">Admin Profile</h2>
-            {!isEditing && (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleEditClick}
-                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                <FaEdit className="mr-2" />
-                <span>Edit Profile</span>
-              </motion.button>
-            )}
-          </div>
-        </div>
-
         <div className="p-6">
           {/* Profile picture section */}
           <div className="flex flex-col items-center mb-8">

@@ -1,9 +1,60 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+
+// Sports icons for the background
+const sportsIcons = [
+  '⚽', '🏀', '🎾', '⚾', '🏈', '🏉', '🎱', '🏓', '🏸', '⛳',
+  '🏊', '🏃', '🚴', '🎯', '🎳', '🏹', '🥊', '🏸', '⚽', '🏀',
+  '🎾', '⚾', '🏈', '🏉', '🎱', '🏓', '🏸', '⛳', '🏊', '🏃'
+];
+
+const FallingIcon = ({ icon, delay }) => {
+  const randomX = Math.random() * 100;
+  const duration = 3 + Math.random() * 2;
+
+  return (
+    <motion.div
+      initial={{ y: -20, x: `${randomX}vw`, opacity: 0 }}
+      animate={{
+        y: '100vh',
+        opacity: [0, 1, 1, 0],
+        scale: [1, 1.2, 1],
+        filter: [
+          'drop-shadow(0 0 0px rgba(255,255,255,0))',
+          'drop-shadow(0 0 20px rgba(255,255,255,0.8))',
+          'drop-shadow(0 0 0px rgba(255,255,255,0))'
+        ]
+      }}
+      transition={{
+        duration,
+        delay,
+        repeat: Infinity,
+        ease: 'linear'
+      }}
+      className="absolute text-2xl pointer-events-none"
+    >
+      {icon}
+    </motion.div>
+  );
+};
+
+const BackgroundAnimation = () => {
+  return (
+    <div className="fixed inset-0 pointer-events-none overflow-hidden">
+      {sportsIcons.map((icon, index) => (
+        <FallingIcon
+          key={index}
+          icon={icon}
+          delay={index * 0.5}
+        />
+      ))}
+    </div>
+  );
+};
 
 const Register = () => {
   const navigate = useNavigate();
@@ -51,7 +102,8 @@ const Register = () => {
   };
 
   return (
-    <div className="h-screen flex items-center justify-center bg-transparent overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-blue-900 to-indigo-900 overflow-hidden py-12">
+      <BackgroundAnimation />
       <motion.div
         initial={{ 
           x: location.state?.from === 'login' ? '100vw' : '-100vw',
@@ -78,10 +130,10 @@ const Register = () => {
           damping: 25,
           mass: 0.8
         }}
-        className="w-full max-w-md"
+        className="w-full max-w-md relative z-10"
       >
         <div
-          className="bg-white p-6 rounded-xl shadow-lg perspective-1000"
+          className="bg-white/90 backdrop-blur-md p-8 rounded-xl shadow-2xl perspective-1000"
           style={{ 
             transformStyle: "preserve-3d",
             backfaceVisibility: "hidden"
