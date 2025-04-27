@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { FaFilter, FaSort, FaHeart } from 'react-icons/fa';
+import { FaFilter, FaSort, FaHeart, FaCreditCard, FaMoneyBill, FaMobileAlt, FaWindowClose } from 'react-icons/fa';
+import { SiPhonepe, SiGooglepay, SiPatreon } from 'react-icons/si';
 
 const BookTurf = () => {
   const [turfs, setTurfs] = useState([]);
@@ -12,6 +13,9 @@ const BookTurf = () => {
   const [loading, setLoading] = useState(true);
   const [bookedSlots, setBookedSlots] = useState([]);
   const [favorites, setFavorites] = useState(new Set());
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Filter and sort states
   const [filters, setFilters] = useState({
@@ -119,9 +123,12 @@ const BookTurf = () => {
       const response = await axios.get('http://localhost:5000/user/favorites', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setFavorites(new Set(response.data.map(turf => turf._id)));
+      // Add null check before mapping
+      setFavorites(new Set((response.data || []).map(turf => turf?._id).filter(Boolean)));
     } catch (error) {
       console.error('Error fetching favorites:', error);
+      // Initialize empty set on error
+      setFavorites(new Set());
     }
   };
 
@@ -204,39 +211,187 @@ const BookTurf = () => {
     }
   }, [selectedTurf, selectedDate]);
 
-  const handleBooking = async () => {
+  const handleInitiateBooking = () => {
     if (!selectedTurf || !selectedDate || !selectedSlot) {
       toast.error('Please select all booking details');
       return;
     }
+    setShowPaymentModal(true);
+  };
 
+  const handlePayment = async () => {
+    if (!selectedPaymentMethod) {
+      toast.error('Please select a payment method');
+      return;
+    }
+
+    setIsProcessingPayment(true);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post('http://localhost:5000/bookings', {
         turfId: selectedTurf._id,
         date: selectedDate,
-        slot: selectedSlot
+        slot: selectedSlot,
+        paymentMethod: selectedPaymentMethod
       }, {
         headers: { Authorization: token }
       });
       
       if (response.data) {
         toast.success('Booking successful! You can view booking details in My Bookings');
+        setShowPaymentModal(false);
+        // Reset form
+        setSelectedTurf(null);
+        setSelectedDate('');
+        setSelectedSlot('');
+        setBookedSlots([]);
+        setSelectedPaymentMethod('cash');
       }
-      
-      // Reset form
-      setSelectedTurf(null);
-      setSelectedDate('');
-      setSelectedSlot('');
-      setBookedSlots([]);
     } catch (error) {
       if (error.response?.data?.message === 'This slot is already booked') {
         toast.error('This slot has just been booked by someone else. Please choose another slot.');
+        setShowPaymentModal(false);
       } else {
         toast.error(error.response?.data?.message || 'Booking failed');
       }
+    } finally {
+      setIsProcessingPayment(false);
     }
   };
+
+  const paymentMethods = [
+    { id: 'cash', name: 'Cash', icon: FaMoneyBill, description: 'Pay at venue' },
+    { id: 'phonepe', name: 'PhonePe', icon: SiPhonepe, description: 'UPI payment via PhonePe' },
+    { id: 'gpay', name: 'Google Pay', icon: SiGooglepay, description: 'UPI payment via Google Pay' },
+    { id: 'card', name: 'Card', icon: FaCreditCard, description: 'Credit/Debit Card' },
+    { id: 'paytm', name: 'Paytm', icon: SiPatreon, description: 'Pay via Paytm Wallet/UPI' }
+  ];
+
+  const PaymentModal = () => (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      onClick={() => !isProcessingPayment && setShowPaymentModal(false)}
+    >
+      <motion.div
+        initial={{ scale: 0.95, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.95, y: 20 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md relative"
+      >
+        <div className="relative mb-6">
+          <h3 className="text-2xl font-bold text-gray-800 text-center">Payment Method</h3>
+          <button
+            onClick={() => !isProcessingPayment && setShowPaymentModal(false)}
+            className="absolute right-0 top-0 text-gray-400 hover:text-gray-600"
+            disabled={isProcessingPayment}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-4 mb-6">
+          {paymentMethods.map((method) => {
+            const Icon = method.icon;
+            return (
+              <motion.button
+                key={method.id}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setSelectedPaymentMethod(method.id)}
+                disabled={isProcessingPayment}
+                className={`w-full p-4 rounded-lg border ${
+                  selectedPaymentMethod === method.id
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-gray-200 hover:border-indigo-300'
+                } flex items-center justify-between transition-all duration-200`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    selectedPaymentMethod === method.id 
+                      ? 'bg-indigo-100' 
+                      : 'bg-gray-100'
+                  }`}>
+                    <Icon className={`w-5 h-5 ${
+                      selectedPaymentMethod === method.id 
+                        ? 'text-indigo-600' 
+                        : 'text-gray-600'
+                    }`} />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-medium text-gray-900">{method.name}</p>
+                    <p className="text-sm text-gray-500">{method.description}</p>
+                  </div>
+                </div>
+                {selectedPaymentMethod === method.id && (
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="w-6 h-6 rounded-full border-2 border-indigo-500 flex items-center justify-center"
+                  >
+                    <div className="w-3 h-3 rounded-full bg-indigo-500" />
+                  </motion.div>
+                )}
+              </motion.button>
+            );
+          })}
+        </div>
+
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex justify-between items-center mb-4">
+            <div className="text-gray-600">Total Amount:</div>
+            <div className="text-2xl font-bold text-gray-900">₹{selectedTurf?.price}</div>
+          </div>
+          
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handlePayment}
+            disabled={isProcessingPayment}
+            className={`w-full py-4 rounded-lg font-semibold text-white ${
+              isProcessingPayment
+                ? 'bg-indigo-400 cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-700'
+            } transition-all duration-200 flex items-center justify-center gap-2`}
+          >
+            {isProcessingPayment ? (
+              <>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
+                />
+                <span>Processing...</span>
+              </>
+            ) : (
+              <>
+                {selectedPaymentMethod === 'cash' ? (
+                  <span>Confirm Booking</span>
+                ) : (
+                  <>
+                    <span>Pay ₹{selectedTurf?.price}</span>
+                    <span>&</span>
+                    <span>Book Now</span>
+                  </>
+                )}
+              </>
+            )}
+          </motion.button>
+          
+          {selectedPaymentMethod !== 'cash' && (
+            <p className="text-xs text-gray-500 text-center mt-2">
+              Secured by SSL 256-bit encryption
+            </p>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
 
   if (loading) {
     return (
@@ -472,12 +627,18 @@ const BookTurf = () => {
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={handleBooking}
+            onClick={handleInitiateBooking}
             className="mt-6 w-full md:w-auto px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors duration-200"
           >
             Confirm Booking
           </motion.button>
         </motion.div>
+      )}
+
+      {showPaymentModal && (
+        <AnimatePresence>
+          <PaymentModal />
+        </AnimatePresence>
       )}
     </motion.div>
   );

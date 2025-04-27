@@ -103,7 +103,8 @@ const turfSchema = new mongoose.Schema({
         rating: Number,
         comment: String,
         date: { type: Date, default: Date.now }
-    }]
+    }],
+    averageRating: { type: Number, default: 0 }
 });
 
 // Add notification schema
@@ -119,7 +120,7 @@ const notificationSchema = new mongoose.Schema({
 
 const Notification = mongoose.model('Notification', notificationSchema);
 
-// Update booking schema to include admin contact
+// Update booking schema to include payment method
 const bookingSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     turfId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turf' },
@@ -127,6 +128,11 @@ const bookingSchema = new mongoose.Schema({
     slot: String,
     status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed' },
     bookingDate: { type: Date, default: Date.now },
+    paymentMethod: { 
+        type: String, 
+        enum: ['cash', 'card', 'phonepe', 'gpay', 'paytm'],
+        default: 'cash'
+    },
     adminContact: {
         name: String,
         phone: String,
@@ -344,9 +350,10 @@ app.get('/turfs', authenticateToken, async (req, res) => {
     }
 });
 
+// Update bookings creation endpoint
 app.post('/bookings', authenticateToken, async (req, res) => {
     try {
-        const { turfId, date, slot } = req.body;
+        const { turfId, date, slot, paymentMethod } = req.body;
 
         // Check if slot is already booked
         const existingBooking = await Booking.findOne({
@@ -371,12 +378,13 @@ app.post('/bookings', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'Turf admin not found' });
         }
 
-        // Create booking with admin contact
+        // Create booking with admin contact and payment method
         const booking = new Booking({
             userId: req.user.id,
             turfId,
             date,
             slot,
+            paymentMethod: paymentMethod || 'cash', // Default to cash if not specified
             adminContact: {
                 name: admin.name,
                 phone: admin.phone,
@@ -385,13 +393,13 @@ app.post('/bookings', authenticateToken, async (req, res) => {
         });
         await booking.save();
 
-        // Create notification for admin
+        // Create notification for admin with payment method
         const notification = new Notification({
             userId: req.user.id,
             adminId: turf.owner,
             turfId,
             type: 'booking',
-            message: `New booking for ${turf.name} on ${new Date(date).toLocaleDateString()} at ${slot}`
+            message: `New booking for ${turf.name} on ${new Date(date).toLocaleDateString()} at ${slot} (Payment: ${paymentMethod || 'cash'})`
         });
         await notification.save();
 
@@ -434,22 +442,188 @@ app.get('/bookings/history', authenticateToken, async (req, res) => {
 app.post('/turfs/:id/reviews', authenticateToken, async (req, res) => {
     try {
         const { rating, comment } = req.body;
-        const turf = await Turf.findByIdAndUpdate(
-            req.params.id,
-            {
-                $push: {
-                    reviews: {
-                        userId: req.user.id,
-                        rating,
-                        comment
-                    }
-                }
-            },
-            { new: true }
+        const { id } = req.params;
+
+        // Input validation
+        if (!rating || !comment) {
+            return res.status(400).json({ message: 'Rating and comment are required' });
+        }
+
+        if (typeof rating !== 'number' || rating < 1 || rating > 5) {
+            return res.status(400).json({ message: 'Rating must be a number between 1 and 5' });
+        }
+
+        if (typeof comment !== 'string' || comment.trim().length < 1) {
+            return res.status(400).json({ message: 'Comment cannot be empty' });
+        }
+
+        // Check if turf exists
+        const turf = await Turf.findById(id);
+        if (!turf) {
+            return res.status(404).json({ message: 'Turf not found' });
+        }
+
+        // Check if user has a confirmed booking for this turf that is in the past
+        const userBookings = await Booking.find({
+            userId: req.user.id,
+            turfId: id,
+            status: 'confirmed'
+        });
+
+        if (!userBookings.length) {
+            return res.status(403).json({ message: 'You must have a confirmed booking to review this turf' });
+        }
+
+        const hasValidBooking = userBookings.some(booking => {
+            const bookingDate = new Date(booking.date);
+            const [startTime] = booking.slot.split('-');
+            const [hours, minutes] = startTime.split(':').map(Number);
+            bookingDate.setHours(hours, minutes, 0);
+            return bookingDate < new Date();
+        });
+
+        if (!hasValidBooking) {
+            return res.status(403).json({ 
+                message: 'You can only review turfs after your booking time has passed' 
+            });
+        }
+
+        // Check if user has already reviewed this turf
+        const existingReview = turf.reviews.find(
+            review => review.userId.toString() === req.user.id
         );
-        res.json(turf);
+
+        if (existingReview) {
+            // Update existing review
+            existingReview.rating = rating;
+            existingReview.comment = comment;
+            existingReview.date = new Date();
+        } else {
+            // Add new review
+            turf.reviews.push({
+                userId: req.user.id,
+                rating,
+                comment,
+                date: new Date()
+            });
+        }
+
+        // Calculate and update average rating
+        const totalRating = turf.reviews.reduce((sum, review) => sum + review.rating, 0);
+        turf.averageRating = totalRating / turf.reviews.length;
+
+        await turf.save();
+
+        // Populate user details for the response
+        const updatedTurf = await Turf.findById(id)
+            .populate('reviews.userId', 'name profilePicture')
+            .populate('owner', 'name');
+
+        // Create notification for turf owner
+        const notification = new Notification({
+            userId: req.user.id,
+            adminId: turf.owner,
+            turfId: id,
+            type: 'review',
+            message: `New ${rating}-star review for ${turf.name} ${existingReview ? '(Updated)' : ''}`
+        });
+        await notification.save();
+
+        // Return response with updated review data
+        res.json({
+            message: `Review ${existingReview ? 'updated' : 'added'} successfully`,
+            turf: {
+                _id: updatedTurf._id,
+                name: updatedTurf.name,
+                averageRating: updatedTurf.averageRating,
+                reviews: updatedTurf.reviews.map(review => ({
+                    _id: review._id,
+                    rating: review.rating,
+                    comment: review.comment,
+                    date: review.date,
+                    user: {
+                        _id: review.userId._id,
+                        name: review.userId.name,
+                        profilePicture: review.userId.profilePicture
+                    }
+                }))
+            }
+        });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Review submission error:', error);
+        res.status(500).json({ 
+            message: 'Failed to submit review',
+            error: error.message 
+        });
+    }
+});
+
+// Add endpoint to get turf reviews
+app.get('/turfs/:id/reviews', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { sort = 'recent', rating } = req.query;
+
+        const turf = await Turf.findById(id)
+            .populate('reviews.userId', 'name profilePicture');
+
+        if (!turf) {
+            return res.status(404).json({ message: 'Turf not found' });
+        }
+
+        let reviews = turf.reviews;
+
+        // Filter by rating if specified
+        if (rating) {
+            reviews = reviews.filter(review => review.rating === parseInt(rating));
+        }
+
+        // Sort reviews
+        switch (sort) {
+            case 'recent':
+                reviews.sort((a, b) => b.date - a.date);
+                break;
+            case 'rating-high':
+                reviews.sort((a, b) => b.rating - a.rating);
+                break;
+            case 'rating-low':
+                reviews.sort((a, b) => a.rating - b.rating);
+                break;
+        }
+
+        // Calculate rating statistics
+        const ratingStats = {
+            average: turf.averageRating || 0,
+            total: reviews.length,
+            distribution: {
+                5: reviews.filter(r => r.rating === 5).length,
+                4: reviews.filter(r => r.rating === 4).length,
+                3: reviews.filter(r => r.rating === 3).length,
+                2: reviews.filter(r => r.rating === 2).length,
+                1: reviews.filter(r => r.rating === 1).length
+            }
+        };
+
+        res.json({
+            stats: ratingStats,
+            reviews: reviews.map(review => ({
+                _id: review._id,
+                rating: review.rating,
+                comment: review.comment,
+                date: review.date,
+                user: {
+                    _id: review.userId._id,
+                    name: review.userId.name,
+                    profilePicture: review.userId.profilePicture
+                }
+            }))
+        });
+    } catch (error) {
+        console.error('Get reviews error:', error);
+        res.status(500).json({ 
+            message: 'Failed to fetch reviews',
+            error: error.message 
+        });
     }
 });
 
@@ -1128,4 +1302,87 @@ app.delete('/user/favorites/:turfId', authenticateToken, async (req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+});
+
+// Get all reviews by a user
+app.get('/turfs/reviews', authenticateToken, async (req, res) => {
+    try {
+        const { sort = 'recent', rating } = req.query;
+        const userId = req.user.id;
+
+        // Find all turfs with reviews by this user
+        const turfs = await Turf.find({
+            'reviews.userId': userId
+        }).populate('reviews.userId', 'name profilePicture');
+
+        // Extract and format all reviews by the user
+        let userReviews = [];
+        turfs.forEach(turf => {
+            const turfReviews = turf.reviews
+                .filter(review => review.userId._id.toString() === userId)
+                .map(review => ({
+                    _id: review._id,
+                    rating: review.rating,
+                    comment: review.comment,
+                    date: review.date,
+                    turf: {
+                        _id: turf._id,
+                        name: turf.name,
+                        location: turf.location
+                    },
+                    user: {
+                        _id: review.userId._id,
+                        name: review.userId.name,
+                        profilePicture: review.userId.profilePicture
+                    }
+                }));
+            userReviews = [...userReviews, ...turfReviews];
+        });
+
+        // Apply rating filter if specified
+        if (rating) {
+            userReviews = userReviews.filter(review => review.rating === parseInt(rating));
+        }
+
+        // Apply sorting
+        switch (sort) {
+            case 'recent':
+                userReviews.sort((a, b) => new Date(b.date) - new Date(a.date));
+                break;
+            case 'rating-high':
+                userReviews.sort((a, b) => b.rating - a.rating);
+                break;
+            case 'rating-low':
+                userReviews.sort((a, b) => a.rating - b.rating);
+                break;
+        }
+
+        // Calculate rating statistics
+        const total = userReviews.length;
+        const distribution = {
+            5: userReviews.filter(r => r.rating === 5).length,
+            4: userReviews.filter(r => r.rating === 4).length,
+            3: userReviews.filter(r => r.rating === 3).length,
+            2: userReviews.filter(r => r.rating === 2).length,
+            1: userReviews.filter(r => r.rating === 1).length
+        };
+        const average = total > 0
+            ? userReviews.reduce((sum, review) => sum + review.rating, 0) / total
+            : 0;
+
+        res.json({
+            stats: {
+                average,
+                total,
+                distribution
+            },
+            reviews: userReviews
+        });
+    } catch (error) {
+        console.error('Get user reviews error:', error);
+        res.status(500).json({ 
+            message: 'Failed to fetch reviews',
+            error: error.message 
+        });
+    }
 });
