@@ -12,6 +12,10 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+app.get('/', (req, res) => {
+    res.send('Welcome to the Turf Booking API!');
+});
+
 // Configure multer for handling file uploads
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -47,10 +51,7 @@ if (!fs.existsSync('uploads')) {
 }
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-});
+mongoose.connect(process.env.MONGODB_URI);
 
 // Schema Definitions
 const userSchema = new mongoose.Schema({
