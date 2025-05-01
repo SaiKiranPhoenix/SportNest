@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
@@ -5,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(express.json());
@@ -13,7 +15,7 @@ app.use(cors());
 // Configure multer for handling file uploads
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, 'uploads/');
+        cb(null, process.env.UPLOADS_DIR);
     },
     filename: function (req, file, cb) {
         cb(null, Date.now() + '-' + file.originalname);
@@ -45,7 +47,7 @@ if (!fs.existsSync('uploads')) {
 }
 
 // MongoDB Connection
-mongoose.connect('mongodb://localhost:27017/sportnest', {
+mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
 });
@@ -140,6 +142,29 @@ const bookingSchema = new mongoose.Schema({
     }
 });
 
+// After other schema definitions
+const paymentSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking', required: true },
+  turfId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turf', required: true },
+  amount: { type: Number, required: true },
+  paymentMethod: { 
+    type: String, 
+    enum: ['cash', 'card', 'phonepe', 'gpay', 'paytm'],
+    required: true
+  },
+  status: { 
+    type: String, 
+    enum: ['pending', 'succeeded', 'failed'],
+    default: 'pending'
+  },
+  transactionId: String,
+  date: { type: Date, default: Date.now },
+  metadata: Object
+});
+
+const Payment = mongoose.model('Payment', paymentSchema);
+
 const User = mongoose.model('User', userSchema);
 const Turf = mongoose.model('Turf', turfSchema);
 const Booking = mongoose.model('Booking', bookingSchema);
@@ -147,16 +172,457 @@ const Booking = mongoose.model('Booking', bookingSchema);
 // Middleware
 const authenticateToken = (req, res, next) => {
     const authHeader = req.header('Authorization');
-    if (!authHeader) return res.status(401).json({ message: 'Access denied' });
+    if (!authHeader) {
+        return res.status(401).json({ 
+            message: 'Access denied',
+            details: 'No authorization token provided'
+        });
+    }
 
     const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
     
-    jwt.verify(token, 'your_jwt_secret', (err, user) => {
-        if (err) return res.status(403).json({ message: 'Invalid token' });
-        req.user = user;
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
         next();
-    });
+    } catch (error) {
+        console.error('Token verification failed:', error);
+        return res.status(403).json({ 
+            message: 'Invalid token',
+            details: 'Please login again to continue'
+        });
+    }
 };
+
+// Add retry function at the top of the file after the imports
+const retryOperation = async (operation, maxRetries = 3, delay = 1000) => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      if (error.type === 'StripeConnectionError') {
+        await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+};
+
+// Update createPaymentIntent endpoint with better error handling and offline mode
+app.post('/create-payment-intent', authenticateToken, async (req, res) => {
+    try {
+      const { amount, turfId, date, slot } = req.body;
+      
+      // Input validation
+      if (!amount || !turfId || !date || !slot) {
+        return res.status(400).json({ 
+          message: 'Missing required fields',
+          details: 'Please provide amount, turfId, date, and slot'
+        });
+      }
+
+      // Validate date format
+      const bookingDate = new Date(date);
+      if (isNaN(bookingDate.getTime())) {
+        return res.status(400).json({ 
+          message: 'Invalid date format',
+          details: 'Please provide a valid date'
+        });
+      }
+      
+      // Check if slot is already booked
+      const existingBooking = await Booking.findOne({
+        turfId,
+        date: bookingDate,
+        slot,
+        status: 'confirmed'
+      });
+  
+      if (existingBooking) {
+        return res.status(400).json({ 
+          message: 'This slot is already booked',
+          details: 'Please select a different time slot'
+        });
+      }
+
+      // Verify the turf exists and get its price
+      const turf = await Turf.findById(turfId);
+      if (!turf) {
+        return res.status(404).json({ 
+          message: 'Turf not found',
+          details: 'The selected turf does not exist'
+        });
+      }
+
+      // Verify amount matches turf price
+      if (amount !== turf.price) {
+        return res.status(400).json({ 
+          message: 'Invalid amount',
+          details: 'The payment amount does not match the turf price'
+        });
+      }
+
+      try {
+        // Try to create a payment intent with Stripe using retry logic
+        const paymentIntent = await retryOperation(async () => {
+          const intent = await stripe.paymentIntents.create({
+            amount: amount * 100, // Stripe expects amount in cents
+            currency: 'inr',
+            metadata: {
+              userId: req.user.id,
+              turfId,
+              date: bookingDate.toISOString(),
+              slot
+            },
+          });
+          return intent;
+        });
+    
+        return res.json({
+          clientSecret: paymentIntent.client_secret,
+          paymentIntentId: paymentIntent.id
+        });
+      } catch (error) {
+        console.error('Stripe error details:', {
+          code: error.code,
+          type: error.type,
+          message: error.message,
+          rawError: error.raw
+        });
+
+        // Check if it's a network-related error
+        if (
+          error.type === 'StripeConnectionError' || 
+          error.code === 'ENOTFOUND' ||
+          error.code === 'ECONNREFUSED'
+        ) {
+          return res.status(503).json({ 
+            message: 'Card payment system temporarily unavailable',
+            details: 'Please try an alternative payment method or try again later',
+            isStripeDown: true,
+            technicalDetails: process.env.NODE_ENV === 'development' ? error.message : undefined
+          });
+        }
+
+        // Handle other Stripe errors
+        return res.status(400).json({ 
+          message: 'Payment initialization failed',
+          details: error.message,
+          code: error.code
+        });
+      }
+    } catch (error) {
+      console.error('Server error:', error);
+      res.status(500).json({ 
+        message: 'Failed to create payment intent',
+        details: error.message
+      });
+    }
+});
+  
+  // Webhook to handle Stripe events
+  app.post('/webhook', express.raw({type: 'application/json'}), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    let event;
+  
+    try {
+      // Verify the webhook signature
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET // Use environment variable for webhook secret
+      );
+    } catch (err) {
+      console.error('Webhook signature verification failed:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+  
+    // Handle the event
+    if (event.type === 'payment_intent.succeeded') {
+      const paymentIntent = event.data.object;
+      
+      try {
+        // Extract metadata
+        const { userId, turfId, date, slot } = paymentIntent.metadata;
+        
+        // Get turf and admin details
+        const turf = await Turf.findById(turfId);
+        if (!turf) {
+          console.error('Turf not found for payment:', turfId);
+          return res.status(400).json({ message: 'Turf not found' });
+        }
+  
+        const admin = await User.findById(turf.owner);
+        if (!admin) {
+          console.error('Admin not found for turf:', turf.owner);
+          return res.status(400).json({ message: 'Turf admin not found' });
+        }
+  
+        // Create booking
+        const booking = new Booking({
+          userId,
+          turfId,
+          date: new Date(date),
+          slot,
+          paymentMethod: 'card', // Stripe payments are card-based
+          adminContact: {
+            name: admin.name,
+            phone: admin.phone,
+            email: admin.email
+          }
+        });
+        await booking.save();
+  
+        // Create notification for admin
+        const notification = new Notification({
+          userId,
+          adminId: turf.owner,
+          turfId,
+          type: 'booking',
+          message: `New booking for ${turf.name} on ${new Date(date).toLocaleDateString()} at ${slot} (Payment: card)`
+        });
+        await notification.save();
+  
+        // Update user's bookings array
+        await User.findByIdAndUpdate(
+          userId,
+          { $push: { bookings: booking._id } }
+        );
+  
+        console.log('Payment succeeded and booking created:', booking._id);
+      } catch (error) {
+        console.error('Error processing successful payment:', error);
+      }
+    } else if (event.type === 'payment_intent.payment_failed') {
+      console.log('Payment failed:', event.data.object.id);
+    }
+  
+    // Return a 200 response to acknowledge receipt of the event
+    res.json({received: true});
+  });
+  
+  // Update the existing bookings endpoint to support both direct and Stripe payments
+  app.post('/bookings', authenticateToken, async (req, res) => {
+    try {
+        const { turfId, date, slot, paymentMethod, paymentIntentId } = req.body;
+        console.log('Booking request:', { turfId, date, slot, paymentMethod });
+
+        // Validate required fields
+        const missingFields = [];
+        if (!turfId) missingFields.push('turfId');
+        if (!date) missingFields.push('date');
+        if (!slot) missingFields.push('slot');
+        if (!paymentMethod) missingFields.push('paymentMethod');
+
+        if (missingFields.length > 0) {
+            console.log('Missing fields:', missingFields);
+            return res.status(400).json({ 
+                message: 'Missing required fields', 
+                details: missingFields
+            });
+        }
+
+        // Validate date format
+        const bookingDate = new Date(date);
+        if (isNaN(bookingDate.getTime())) {
+            console.log('Invalid date format:', date);
+            return res.status(400).json({ 
+                message: 'Invalid date format',
+                details: 'Please provide a valid date'
+            });
+        }
+
+        // Validate payment method
+        const validPaymentMethods = ['cash', 'card', 'phonepe', 'gpay', 'paytm'];
+        if (!validPaymentMethods.includes(paymentMethod)) {
+            console.log('Invalid payment method:', paymentMethod);
+            return res.status(400).json({ 
+                message: 'Invalid payment method',
+                details: `Payment method must be one of: ${validPaymentMethods.join(', ')}`
+            });
+        }
+
+        // Validate payment intent for card payments
+        if (paymentMethod === 'card' && !paymentIntentId) {
+            console.log('Missing payment intent ID for card payment');
+            return res.status(400).json({ 
+                message: 'Card payment requires payment intent ID',
+                details: 'Please complete the payment process first'
+            });
+        }
+
+        if (paymentMethod !== 'card' && paymentIntentId) {
+            console.log('Unexpected payment intent ID for non-card payment');
+            return res.status(400).json({ 
+                message: 'Invalid payment configuration',
+                details: 'Payment intent ID should only be provided for card payments'
+            });
+        }
+
+        // Check if slot is already booked
+        const existingBooking = await Booking.findOne({
+            turfId,
+            date: bookingDate,
+            slot,
+            status: 'confirmed'
+        });
+
+        if (existingBooking) {
+            console.log('Slot already booked:', { existingBookingId: existingBooking._id });
+            return res.status(400).json({ 
+                message: 'Slot already booked',
+                details: 'This time slot has already been booked by someone else'
+            });
+        }
+
+        // Get turf and admin details
+        const turf = await Turf.findById(turfId);
+        if (!turf) {
+            console.log('Turf not found:', turfId);
+            return res.status(404).json({ message: 'Turf not found' });
+        }
+
+        const admin = await User.findById(turf.owner);
+        if (!admin) {
+            console.log('Admin not found:', turf.owner);
+            return res.status(404).json({ message: 'Turf admin not found' });
+        }
+
+        // For card payments, verify payment intent
+        if (paymentMethod === 'card') {
+            try {
+                const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+                
+                if (paymentIntent.status !== 'succeeded') {
+                    console.log('Payment not completed:', paymentIntent.status);
+                    return res.status(400).json({ 
+                        message: 'Payment incomplete',
+                        details: 'Please complete the payment process first'
+                    });
+                }
+
+                // Verify payment details match booking
+                if (paymentIntent.metadata.userId !== req.user.id ||
+                    paymentIntent.metadata.turfId !== turfId ||
+                    new Date(paymentIntent.metadata.date).toISOString() !== bookingDate.toISOString() ||
+                    paymentIntent.metadata.slot !== slot) {
+                    console.log('Payment details mismatch:', {
+                        expected: {
+                            userId: req.user.id,
+                            turfId,
+                            date: bookingDate.toISOString(),
+                            slot
+                        },
+                        received: paymentIntent.metadata
+                    });
+                    return res.status(400).json({ 
+                        message: 'Payment verification failed',
+                        details: 'Payment details do not match booking details'
+                    });
+                }
+            } catch (error) {
+                console.log('Payment verification error:', error);
+                return res.status(400).json({ 
+                    message: 'Payment verification failed',
+                    details: error.message
+                });
+            }
+        }
+
+        // Create booking
+        const booking = new Booking({
+            userId: req.user.id,
+            turfId,
+            date: bookingDate,
+            slot,
+            paymentMethod,
+            adminContact: {
+                name: admin.name,
+                phone: admin.phone,
+                email: admin.email
+            }
+        });
+        await booking.save();
+
+        // Create payment record
+        const payment = new Payment({
+            userId: req.user.id,
+            bookingId: booking._id,
+            turfId,
+            amount: turf.price,
+            paymentMethod,
+            status: paymentMethod === 'card' ? 'succeeded' : 'pending',
+            transactionId: paymentIntentId || undefined,
+            metadata: paymentMethod === 'card' ? { stripePaymentIntentId: paymentIntentId } : undefined
+        });
+        await payment.save();
+
+        // Create notification
+        const notification = new Notification({
+            userId: req.user.id,
+            adminId: turf.owner,
+            turfId,
+            type: 'booking',
+            message: `New booking for ${turf.name} on ${bookingDate.toLocaleDateString()} at ${slot}`
+        });
+        await notification.save();
+
+        // Update user's bookings array
+        await User.findByIdAndUpdate(
+            req.user.id,
+            { $push: { bookings: booking._id } }
+        );
+
+        console.log('Booking created successfully:', booking._id);
+        res.status(201).json({
+            booking,
+            payment: {
+                _id: payment._id,
+                amount: payment.amount,
+                status: payment.status,
+                transactionId: payment.transactionId
+            }
+        });
+    } catch (error) {
+        console.error('Booking error:', error);
+        res.status(500).json({ 
+            message: 'Failed to create booking',
+            error: error.message,
+            details: 'An unexpected error occurred while processing your booking'
+        });
+    }
+});
+  
+  // Add an endpoint to get payment methods
+  app.get('/payment-methods', authenticateToken, (req, res) => {
+      try {
+          const paymentMethods = [
+              { id: 'cash', name: 'Cash', description: 'Pay at the venue' },
+              { id: 'card', name: 'Credit/Debit Card', description: 'Pay securely with Stripe' },
+              { id: 'phonepe', name: 'PhonePe', description: 'Pay with PhonePe' },
+              { id: 'gpay', name: 'Google Pay', description: 'Pay with Google Pay' },
+              { id: 'paytm', name: 'Paytm', description: 'Pay with Paytm' }
+          ];
+          
+          res.json(paymentMethods);
+      } catch (error) {
+          res.status(500).json({ message: error.message });
+      }
+  });
+  
+  // Add an endpoint to check if a payment method requires online payment
+  app.get('/payment-methods/:method/requires-online', authenticateToken, (req, res) => {
+      try {
+          const { method } = req.params;
+          const requiresOnlinePayment = method === 'card';
+          
+          res.json({ requiresOnlinePayment });
+      } catch (error) {
+          res.status(500).json({ message: error.message });
+      }
+  });
 
 const isAdmin = (req, res, next) => {
     if (req.user.role !== 'admin') {
@@ -197,7 +663,7 @@ app.post('/login', async (req, res) => {
         }
         const token = jwt.sign(
             { id: user._id, role: user.role },
-            'your_jwt_secret',
+            process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
         res.json({ token, role: user.role });
@@ -345,71 +811,6 @@ app.get('/turfs', authenticateToken, async (req, res) => {
 
         const turfs = await Turf.find(filter).sort(sort);
         res.json(turfs);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// Update bookings creation endpoint
-app.post('/bookings', authenticateToken, async (req, res) => {
-    try {
-        const { turfId, date, slot, paymentMethod } = req.body;
-
-        // Check if slot is already booked
-        const existingBooking = await Booking.findOne({
-            turfId,
-            date,
-            slot,
-            status: 'confirmed'
-        });
-
-        if (existingBooking) {
-            return res.status(400).json({ message: 'This slot is already booked' });
-        }
-
-        // Get turf and admin details
-        const turf = await Turf.findById(turfId);
-        if (!turf) {
-            return res.status(404).json({ message: 'Turf not found' });
-        }
-
-        const admin = await User.findById(turf.owner);
-        if (!admin) {
-            return res.status(404).json({ message: 'Turf admin not found' });
-        }
-
-        // Create booking with admin contact and payment method
-        const booking = new Booking({
-            userId: req.user.id,
-            turfId,
-            date,
-            slot,
-            paymentMethod: paymentMethod || 'cash', // Default to cash if not specified
-            adminContact: {
-                name: admin.name,
-                phone: admin.phone,
-                email: admin.email
-            }
-        });
-        await booking.save();
-
-        // Create notification for admin with payment method
-        const notification = new Notification({
-            userId: req.user.id,
-            adminId: turf.owner,
-            turfId,
-            type: 'booking',
-            message: `New booking for ${turf.name} on ${new Date(date).toLocaleDateString()} at ${slot} (Payment: ${paymentMethod || 'cash'})`
-        });
-        await notification.save();
-
-        // Update user's bookings array
-        await User.findByIdAndUpdate(
-            req.user.id,
-            { $push: { bookings: booking._id } }
-        );
-
-        res.status(201).json(booking);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -1385,4 +1786,35 @@ app.get('/turfs/reviews', authenticateToken, async (req, res) => {
             error: error.message 
         });
     }
+});
+
+// Add route to get user payment history
+app.get('/user/payments', authenticateToken, async (req, res) => {
+  try {
+    const payments = await Payment.find({ userId: req.user.id })
+      .populate({
+        path: 'bookingId',
+        select: 'slot'
+      })
+      .populate({
+        path: 'turfId',
+        select: 'name'
+      })
+      .sort({ date: -1 });
+
+    const formattedPayments = payments.map(payment => ({
+      _id: payment._id,
+      amount: payment.amount,
+      paymentMethod: payment.paymentMethod,
+      status: payment.status,
+      transactionId: payment.transactionId || 'N/A',
+      date: payment.date,
+      turf: payment.turfId,
+      slot: payment.bookingId?.slot
+    }));
+
+    res.json(formattedPayments);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
